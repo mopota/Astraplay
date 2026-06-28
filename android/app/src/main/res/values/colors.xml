@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="player_background">#000000</color>
+    <color name="player_overlay_bg">#99000000</color>
+    <color name="glass_bg">#4D000000</color>
+    <color name="accent_red">#E50914</color>
+    <color name="live_red">#FF0000</color>
+    <color name="text_primary">#FFFFFF</color>
+    <color name="text_secondary">#B3FFFFFF</color>
+    <color name="badge_bg">#33FFFFFF</color>
+</resources>
