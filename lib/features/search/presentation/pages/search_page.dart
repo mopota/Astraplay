@@ -206,7 +206,7 @@ class _SearchPageState extends State<SearchPage> {
               ),
             ),
           ],
-        ).animate().fadeIn(),
+        ),
       );
     }
 
@@ -334,7 +334,7 @@ class _SearchPageState extends State<SearchPage> {
               }
             },
           ),
-        ).animate().fadeIn(delay: (index * 40).ms).slideX(begin: 0.1, end: 0);
+        );
       },
     );
   }

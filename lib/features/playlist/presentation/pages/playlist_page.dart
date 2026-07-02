@@ -82,10 +82,7 @@ class PlaylistPage extends StatelessWidget {
                         final playlist = state.playlists[index];
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 12),
-                          child: _PlaylistCard(playlist: playlist)
-                              .animate()
-                              .fadeIn(delay: (index * 50).ms)
-                              .slideX(begin: 0.1, end: 0),
+                          child: _PlaylistCard(playlist: playlist),
                         );
                       },
                       childCount: state.playlists.length,
@@ -101,7 +98,7 @@ class PlaylistPage extends StatelessWidget {
         onPressed: () => context.push('/add-source'),
         icon: const Icon(Icons.add_rounded),
         label: const Text('Add New'),
-      ).animate().scale(delay: 400.ms),
+      ),
     );
   }
 
@@ -136,7 +133,7 @@ class PlaylistPage extends StatelessWidget {
             label: const Text('GET STARTED'),
           ),
         ],
-      ).animate().fadeIn(),
+      ),
     );
   }
 }

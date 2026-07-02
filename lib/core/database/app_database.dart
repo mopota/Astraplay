@@ -213,8 +213,11 @@ class AppDatabase {
     });
   }
 
-  Future<int> getLastPosition(int streamId) async {
-    final record = await isar.historyRecords.filter().streamIdEqualTo(streamId).findFirst();
+  Future<int> getLastPosition(int streamId, {String? episodeMetadata}) async {
+    final query = isar.historyRecords.filter().streamIdEqualTo(streamId);
+    final record = episodeMetadata != null 
+        ? await query.episodeMetadataEqualTo(episodeMetadata).findFirst()
+        : await query.findFirst();
     return record?.lastPosition ?? 0;
   }
 }

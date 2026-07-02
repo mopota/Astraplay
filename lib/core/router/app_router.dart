@@ -12,6 +12,7 @@ import '../../features/player/presentation/pages/video_player_page.dart';
 import '../../features/playlist/domain/entities/playlist.entity.dart';
 import '../../features/search/presentation/pages/search_page.dart';
 import '../../features/settings/presentation/pages/settings_page.dart';
+import '../../features/settings/presentation/pages/legal_page.dart';
 import '../../features/source_management/presentation/pages/add_source_page.dart';
 import '../../features/source_management/presentation/pages/direct_stream_page.dart';
 import '../../features/source_management/presentation/pages/playlist_url_page.dart';
@@ -146,6 +147,12 @@ class AppRouter {
           GoRoute(
             path: '/settings',
             builder: (context, state) => const SettingsPage(),
+            routes: [
+              GoRoute(
+                path: 'legal',
+                builder: (context, state) => const LegalPage(),
+              ),
+            ],
           ),
         ],
       ),
@@ -187,6 +194,8 @@ class AppRouter {
           final streamId = extra['streamId'] as int?;
           final headers = extra['headers'] as Map<String, String>?;
           final episodeMetadata = extra['episodeMetadata'] as String?;
+          final playlist = extra['playlist'] as List<Map<String, String>>?;
+          final initialIndex = extra['initialIndex'] as int?;
 
           if (streamUrl is! String || title is! String) {
             return const InvalidArgumentPage(message: 'Invalid video details');
@@ -198,6 +207,8 @@ class AppRouter {
             streamId: streamId,
             headers: headers,
             episodeMetadata: episodeMetadata,
+            playlist: playlist,
+            initialIndex: initialIndex,
           );
         },
       ),

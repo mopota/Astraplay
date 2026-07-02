@@ -201,7 +201,7 @@ class _CategoryList extends StatelessWidget {
           ),
         ),
       ),
-    ).animate().fadeIn(delay: (index * 40).ms).scale(begin: const Offset(0.9, 0.9));
+    );
   }
 
   void _navigateToStreams(BuildContext context, String categoryName) {

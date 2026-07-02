@@ -135,6 +135,17 @@ class SettingsPage extends StatelessWidget {
                   title: const Text('Open Source Licenses', style: TextStyle(fontWeight: FontWeight.bold)),
                   onTap: () => showLicensePage(context: context),
                 ),
+                const Divider(indent: 72, endIndent: 20, height: 1),
+                ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: Colors.blueGrey.withAlpha(20),
+                    child: const Icon(Icons.gavel_rounded, color: Colors.blueGrey, size: 20),
+                  ),
+                  title: const Text('Privacy & Terms', style: TextStyle(fontWeight: FontWeight.bold)),
+                  subtitle: const Text('Privacy policy and usage terms', style: TextStyle(fontSize: 12)),
+                  trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14),
+                  onTap: () => context.push('/settings/legal'),
+                ),
               ]),
               const SizedBox(height: 60),
               const Center(

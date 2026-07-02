@@ -400,7 +400,14 @@ class _SeriesDetailsPageState extends State<SeriesDetailsPage> {
               SizedBox(
                 width: double.infinity,
                 child: FilledButton.icon(
-                  onPressed: () => _playEpisode(_lastWatchedEpisode!.cast<String, String>()),
+                  onPressed: () {
+                    final ep = _lastWatchedEpisode!.cast<String, String>();
+                    String? targetSeason = ep['season'];
+                    if (targetSeason != null && _seasons.containsKey(targetSeason)) {
+                       setState(() => _selectedSeason = targetSeason);
+                    }
+                    _playEpisode(ep);
+                  },
                   style: FilledButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -575,7 +582,7 @@ class _SeriesDetailsPageState extends State<SeriesDetailsPage> {
             return Padding(
               padding: const EdgeInsets.only(bottom: 16),
               child: InkWell(
-                onTap: () => _playEpisode(ep),
+                onTap: () => _playEpisode(ep, index),
                 borderRadius: BorderRadius.circular(28),
                 child: Container(
                   padding: const EdgeInsets.all(12),
@@ -674,7 +681,7 @@ class _SeriesDetailsPageState extends State<SeriesDetailsPage> {
                   ),
                 ),
               ),
-            ).animate().fadeIn(delay: (index * 50).ms).slideY(begin: 0.1, end: 0);
+            );
           },
           childCount: episodes.length,
         ),
@@ -682,12 +689,20 @@ class _SeriesDetailsPageState extends State<SeriesDetailsPage> {
     );
   }
 
-  void _playEpisode(Map<String, String> ep) async {
+  void _playEpisode(Map<String, String> ep, [int? index]) async {
     final url = ep['url'];
     if (url != null) {
       setState(() {
         _watchedUrls.add(url);
       });
+    }
+
+    final season = ep['season'] ?? _selectedSeason;
+    final currentEpisodes = _seasons[season] ?? [];
+    int actualIndex = index ?? -1;
+    
+    if (actualIndex == -1) {
+      actualIndex = currentEpisodes.indexWhere((e) => e['url'] == ep['url']);
     }
 
     await context.push('/player', extra: {
@@ -700,6 +715,8 @@ class _SeriesDetailsPageState extends State<SeriesDetailsPage> {
         'episodeId': ep['id'],
         'season': ep['season'],
       }),
+      'playlist': currentEpisodes.isNotEmpty ? currentEpisodes : null,
+      'initialIndex': actualIndex != -1 ? actualIndex : null,
     });
     
     // Refresh history when coming back to ensure sync

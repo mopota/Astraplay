@@ -94,7 +94,7 @@ class _MovieDetailsPageState extends State<MovieDetailsPage> {
                       icon: const Icon(Icons.play_arrow_rounded, size: 32),
                       label: const Text('WATCH NOW', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16, letterSpacing: 1.2)),
                     ),
-                  ).animate().scale(delay: 200.ms),
+                  ),
 
                   const SizedBox(height: 32),
 

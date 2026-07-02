@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/database/app_database.dart';
@@ -12,6 +13,8 @@ class VideoPlayerPage extends StatefulWidget {
   final int? streamId;
   final Map<String, String>? headers;
   final String? episodeMetadata;
+  final List<Map<String, String>>? playlist;
+  final int? initialIndex;
 
   const VideoPlayerPage({
     super.key,
@@ -20,6 +23,8 @@ class VideoPlayerPage extends StatefulWidget {
     this.streamId,
     this.headers,
     this.episodeMetadata,
+    this.playlist,
+    this.initialIndex,
   });
 
   @override
@@ -28,15 +33,29 @@ class VideoPlayerPage extends StatefulWidget {
 
 class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingObserver {
   NativePlayerController? _controller;
+  
+  late String _currentUrl;
+  late String _currentTitle;
+  String? _currentMetadata;
+  int? _currentIndex;
 
   @override
   void initState() {
     super.initState();
+    _currentUrl = widget.streamUrl;
+    _currentTitle = widget.title;
+    _currentMetadata = widget.episodeMetadata;
+    _currentIndex = widget.initialIndex;
+
     WidgetsBinding.instance.addObserver(this);
+    _addToHistory();
+  }
+
+  void _addToHistory() {
     if (widget.streamId != null) {
       unawaited(sl<AppDatabase>().addToHistory(
         widget.streamId!, 
-        episodeMetadata: widget.episodeMetadata,
+        episodeMetadata: _currentMetadata,
       ));
     }
   }
@@ -52,14 +71,51 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
     if (widget.streamId != null && _controller != null) {
       final pos = _controller!.position.inMilliseconds;
       final dur = _controller!.duration.inMilliseconds;
-      // Only save if we have some progress and it's not at the very end (e.g. within last 5 seconds)
       if (pos > 5000) {
         unawaited(sl<AppDatabase>().addToHistory(
           widget.streamId!, 
           position: pos, 
           duration: dur,
-          episodeMetadata: widget.episodeMetadata,
+          episodeMetadata: _currentMetadata,
         ));
+      }
+    }
+  }
+
+  Future<void> _changeEpisode(int newIndex) async {
+    if (widget.playlist == null || newIndex < 0 || newIndex >= widget.playlist!.length) return;
+    
+    _savePosition();
+    
+    final ep = widget.playlist![newIndex];
+    final epUrl = ep['url'] ?? '';
+    final epName = ep['name'] ?? '';
+    final seriesTitle = widget.title.contains(' - ') 
+        ? widget.title.split(' - ').first 
+        : widget.title;
+
+    setState(() {
+      _currentIndex = newIndex;
+      _currentUrl = epUrl;
+      _currentTitle = '$seriesTitle - $epName';
+      _currentMetadata = jsonEncode({
+        'url': epUrl,
+        'name': epName,
+        'episodeId': ep['id'],
+        'season': ep['season'],
+      });
+    });
+
+    if (_controller != null) {
+      await _controller!.play(_currentUrl, headers: widget.headers);
+      _addToHistory();
+      
+      final lastPos = await sl<AppDatabase>().getLastPosition(
+        widget.streamId!, 
+        episodeMetadata: _currentMetadata,
+      );
+      if (lastPos > 0) {
+        await _controller!.seekTo(Duration(milliseconds: lastPos));
       }
     }
   }
@@ -73,57 +129,58 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
 
   @override
   Widget build(BuildContext context) {
-    return BackButtonListener(
-      onBackButtonPressed: () async {
-        // عندما يضغط المستخدم على زر الرجوع في الهاتف
-        _savePosition();
-        if (context.mounted) {
-          context.pop(); // نطلب الرجوع مرة واحدة فقط
-        }
-        return true; // نخبر النظام أننا قمنا بالمعالجة ولا نريد منه فعل شيء آخر
-      },
-      child: Scaffold(
-        backgroundColor: Colors.black,
-        body: Stack(
-          children: [
-            Center(
-              child: NativeVideoPlayer(
-                url: widget.streamUrl,
-                title: widget.title,
-                headers: widget.headers,
-                onCreated: (controller) async {
-                  setState(() => _controller = controller);
-                  
-                  // Resume position if available
-                  if (widget.streamId != null) {
-                    final lastPos = await sl<AppDatabase>().getLastPosition(widget.streamId!);
-                    if (lastPos > 0) {
-                      await controller.seekTo(Duration(milliseconds: lastPos));
-                    }
+    // We rely on dispose() to save position. 
+    // GoRouter handles the back button pop naturally.
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Stack(
+        children: [
+          Center(
+            child: NativeVideoPlayer(
+              url: _currentUrl,
+              title: _currentTitle,
+              headers: widget.headers,
+              onCreated: (controller) async {
+                setState(() => _controller = controller);
+                
+                if (widget.streamId != null) {
+                  final lastPos = await sl<AppDatabase>().getLastPosition(
+                    widget.streamId!, 
+                    episodeMetadata: _currentMetadata,
+                  );
+                  if (lastPos > 0) {
+                    await controller.seekTo(Duration(milliseconds: lastPos));
                   }
+                }
+              },
+            ),
+          ),
+          if (_controller != null)
+            Positioned.fill(
+              child: ListenableBuilder(
+                listenable: _controller!,
+                builder: (context, _) {
+                  if (_controller!.isInPiP) return const SizedBox.shrink();
+                  
+                  final hasPlaylist = widget.playlist != null && widget.playlist!.isNotEmpty;
+                  final hasNext = hasPlaylist && _currentIndex != null && _currentIndex! < widget.playlist!.length - 1;
+                  final hasPrev = hasPlaylist && _currentIndex != null && _currentIndex! > 0;
+
+                  return VideoPlayerControls(
+                    controller: _controller!,
+                    title: _currentTitle,
+                    onBack: () => context.pop(),
+                    onNext: hasNext ? () => _changeEpisode(_currentIndex! + 1) : null,
+                    onPrevious: hasPrev ? () => _changeEpisode(_currentIndex! - 1) : null,
+                  );
                 },
               ),
             ),
-            if (_controller != null)
-              Positioned.fill(
-                child: ListenableBuilder(
-                  listenable: _controller!,
-                  builder: (context, _) {
-                    if (_controller!.isInPiP) return const SizedBox.shrink();
-                    return VideoPlayerControls(
-                      controller: _controller!,
-                      title: widget.title,
-                      onBack: () => context.pop(),
-                    );
-                  },
-                ),
-              ),
-            if (_controller == null)
-              const Center(
-                child: CircularProgressIndicator(color: Colors.red),
-              ),
-          ],
-        ),
+          if (_controller == null)
+            const Center(
+              child: CircularProgressIndicator(color: Colors.red),
+            ),
+        ],
       ),
     );
   }

@@ -9,12 +9,16 @@ class VideoPlayerControls extends StatefulWidget {
   final NativePlayerController controller;
   final String title;
   final VoidCallback onBack;
+  final VoidCallback? onNext;
+  final VoidCallback? onPrevious;
 
   const VideoPlayerControls({
     super.key,
     required this.controller,
     required this.title,
     required this.onBack,
+    this.onNext,
+    this.onPrevious,
   });
 
   @override
@@ -370,10 +374,18 @@ class _VideoPlayerControlsState extends State<VideoPlayerControls> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
+        if (widget.onPrevious != null) ...[
+          _buildEpisodeButton(
+            icon: Icons.skip_previous_rounded,
+            label: 'الحلقة السابقة',
+            onTap: widget.onPrevious!,
+          ),
+          const SizedBox(width: 24),
+        ],
         _buildSkipButton(Icons.replay_10_rounded, () {
           widget.controller.seekTo(widget.controller.position - const Duration(seconds: 10));
         }),
-        const SizedBox(width: 48),
+        const SizedBox(width: 32),
         if (isBuffering)
           SizedBox(
             width: 50,
@@ -418,10 +430,51 @@ class _VideoPlayerControlsState extends State<VideoPlayerControls> {
             begin: const Offset(0.9, 0.9),
             end: const Offset(1.0, 1.0),
           ),
-        const SizedBox(width: 48),
+        const SizedBox(width: 32),
         _buildSkipButton(Icons.forward_10_rounded, () {
           widget.controller.seekTo(widget.controller.position + const Duration(seconds: 10));
         }),
+        if (widget.onNext != null) ...[
+          const SizedBox(width: 24),
+          _buildEpisodeButton(
+            icon: Icons.skip_next_rounded,
+            label: 'الحلقة القادمة',
+            onTap: widget.onNext!,
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildEpisodeButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        IconButton(
+          onPressed: () {
+            HapticFeedback.mediumImpact();
+            onTap();
+          },
+          icon: Icon(icon, size: 32, color: Colors.white),
+          style: IconButton.styleFrom(
+            backgroundColor: Colors.white.withValues(alpha: 0.1),
+            padding: const EdgeInsets.all(12),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          label,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 10,
+            fontWeight: FontWeight.bold,
+            shadows: [Shadow(blurRadius: 4, color: Colors.black)],
+          ),
+        ),
       ],
     );
   }

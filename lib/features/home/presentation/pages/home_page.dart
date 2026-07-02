@@ -390,7 +390,7 @@ class _HomePageState extends State<HomePage> {
           ),
         ),
       ),
-    ).animate().fadeIn(delay: 200.ms).scale(begin: const Offset(0.9, 0.9));
+    );
   }
 
   Widget _buildSearchShortcut(BuildContext context) {
@@ -420,7 +420,7 @@ class _HomePageState extends State<HomePage> {
           ],
         ),
       ),
-    ).animate().slideY(begin: 0.2, end: 0);
+    );
   }
 
   Widget _buildSliverSectionHeader(BuildContext context, String title, IconData icon, {VoidCallback? onSeeAll}) {
@@ -550,7 +550,7 @@ class _HomePageState extends State<HomePage> {
                 ],
               ),
             ),
-          ).animate().fadeIn(delay: (index * 100).ms).slideX(begin: 0.2, end: 0);
+          );
         },
       ),
     );
@@ -614,7 +614,7 @@ class _HomePageState extends State<HomePage> {
                 ],
               ),
             ),
-          ).animate().fadeIn(delay: (index * 50).ms).scale(begin: const Offset(0.8, 0.8));
+          );
         },
       ),
     );

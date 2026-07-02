@@ -156,10 +156,9 @@ class _StreamListPageState extends State<StreamListPage> {
                               type: widget.type,
                               customTitle: seriesName,
                               m3uEpisodes: epList,
-                            ).animate().fade(duration: 400.ms, delay: (index * 20).ms).scale(begin: const Offset(0.9, 0.9));
+                            );
                           } else {
-                            return _StreamCard(stream: filteredStreams[index], type: widget.type)
-                                .animate().fade(duration: 400.ms, delay: (index * 20).ms).scale(begin: const Offset(0.9, 0.9));
+                            return _StreamCard(stream: filteredStreams[index], type: widget.type);
                           }
                         },
                         childCount: isGroupedM3u ? m3uSeriesNames.length : filteredStreams.length,
