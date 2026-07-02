@@ -8,6 +8,8 @@ import '../../../../injection_container.dart';
 import '../../../../core/database/app_database.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../domain/repositories/stream_repository.dart';
+import 'package:dartz/dartz.dart' as dartz;
+import '../../../../core/errors/failures.dart';
 
 class StreamListPage extends StatefulWidget {
   final int playlistId;
@@ -29,6 +31,13 @@ class _StreamListPageState extends State<StreamListPage> {
   String _searchQuery = '';
   String _sortBy = 'name'; // 'name', 'newest'
   final TextEditingController _searchController = TextEditingController();
+  late Future<dartz.Either<Failure, List<AppStream>>> _streamsFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _streamsFuture = sl<StreamRepository>().getStreams(widget.playlistId, widget.category, widget.type);
+  }
 
   @override
   void dispose() {
@@ -69,7 +78,7 @@ class _StreamListPageState extends State<StreamListPage> {
           SliverPadding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             sliver: FutureBuilder(
-              future: sl<StreamRepository>().getStreams(widget.playlistId, widget.category, widget.type),
+              future: _streamsFuture,
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const SliverFillRemaining(

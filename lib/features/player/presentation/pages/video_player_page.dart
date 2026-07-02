@@ -38,6 +38,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
   late String _currentTitle;
   String? _currentMetadata;
   int? _currentIndex;
+  bool _isPopping = false;
 
   @override
   void initState() {
@@ -127,60 +128,74 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
     }
   }
 
+  void _handleBack() {
+    if (_isPopping) return;
+    _isPopping = true;
+    _savePosition();
+    if (mounted) {
+      context.pop();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    // We rely on dispose() to save position. 
-    // GoRouter handles the back button pop naturally.
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: Stack(
-        children: [
-          Center(
-            child: NativeVideoPlayer(
-              url: _currentUrl,
-              title: _currentTitle,
-              headers: widget.headers,
-              onCreated: (controller) async {
-                setState(() => _controller = controller);
-                
-                if (widget.streamId != null) {
-                  final lastPos = await sl<AppDatabase>().getLastPosition(
-                    widget.streamId!, 
-                    episodeMetadata: _currentMetadata,
-                  );
-                  if (lastPos > 0) {
-                    await controller.seekTo(Duration(milliseconds: lastPos));
-                  }
-                }
-              },
-            ),
-          ),
-          if (_controller != null)
-            Positioned.fill(
-              child: ListenableBuilder(
-                listenable: _controller!,
-                builder: (context, _) {
-                  if (_controller!.isInPiP) return const SizedBox.shrink();
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        _handleBack();
+      },
+      child: Scaffold(
+        backgroundColor: Colors.black,
+        body: Stack(
+          children: [
+            Center(
+              child: NativeVideoPlayer(
+                url: _currentUrl,
+                title: _currentTitle,
+                headers: widget.headers,
+                onCreated: (controller) async {
+                  setState(() => _controller = controller);
                   
-                  final hasPlaylist = widget.playlist != null && widget.playlist!.isNotEmpty;
-                  final hasNext = hasPlaylist && _currentIndex != null && _currentIndex! < widget.playlist!.length - 1;
-                  final hasPrev = hasPlaylist && _currentIndex != null && _currentIndex! > 0;
-
-                  return VideoPlayerControls(
-                    controller: _controller!,
-                    title: _currentTitle,
-                    onBack: () => context.pop(),
-                    onNext: hasNext ? () => _changeEpisode(_currentIndex! + 1) : null,
-                    onPrevious: hasPrev ? () => _changeEpisode(_currentIndex! - 1) : null,
-                  );
+                  if (widget.streamId != null) {
+                    final lastPos = await sl<AppDatabase>().getLastPosition(
+                      widget.streamId!, 
+                      episodeMetadata: _currentMetadata,
+                    );
+                    if (lastPos > 0) {
+                      await controller.seekTo(Duration(milliseconds: lastPos));
+                    }
+                  }
                 },
               ),
             ),
-          if (_controller == null)
-            const Center(
-              child: CircularProgressIndicator(color: Colors.red),
-            ),
-        ],
+            if (_controller != null)
+              Positioned.fill(
+                child: ListenableBuilder(
+                  listenable: _controller!,
+                  builder: (context, _) {
+                    if (_controller!.isInPiP) return const SizedBox.shrink();
+                    
+                    final hasPlaylist = widget.playlist != null && widget.playlist!.isNotEmpty;
+                    final hasNext = hasPlaylist && _currentIndex != null && _currentIndex! < widget.playlist!.length - 1;
+                    final hasPrev = hasPlaylist && _currentIndex != null && _currentIndex! > 0;
+  
+                    return VideoPlayerControls(
+                      controller: _controller!,
+                      title: _currentTitle,
+                      onBack: _handleBack,
+                      onNext: hasNext ? () => _changeEpisode(_currentIndex! + 1) : null,
+                      onPrevious: hasPrev ? () => _changeEpisode(_currentIndex! - 1) : null,
+                    );
+                  },
+                ),
+              ),
+            if (_controller == null)
+              const Center(
+                child: CircularProgressIndicator(color: Colors.red),
+              ),
+          ],
+        ),
       ),
     );
   }

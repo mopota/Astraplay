@@ -12,4 +12,5 @@ class CategoryEntity {
 
 abstract class CategoryRepository {
   Future<Either<Failure, List<CategoryEntity>>> getCategories(int playlistId, StreamType type);
+  void clearCache();
 }

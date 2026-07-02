@@ -6,13 +6,22 @@ import '../../domain/repositories/stream_repository.dart';
 
 class StreamRepositoryImpl implements StreamRepository {
   final AppDatabase database;
+  
+  // Simple Memory Cache for streams
+  final Map<String, List<AppStream>> _cache = {};
 
   StreamRepositoryImpl({required this.database});
 
   @override
   Future<Either<Failure, List<AppStream>>> getStreams(int playlistId, String category, StreamType type) async {
+    final cacheKey = '${playlistId}_${category}_${type.name}';
+    if (_cache.containsKey(cacheKey)) {
+      return Right(_cache[cacheKey]!);
+    }
+
     try {
       final streams = await database.getStreamsByCategory(playlistId, category, type);
+      _cache[cacheKey] = streams;
       return Right(streams);
     } catch (e) {
       return Left(DatabaseFailure(e.toString()));
@@ -23,6 +32,8 @@ class StreamRepositoryImpl implements StreamRepository {
   Future<Either<Failure, Unit>> toggleFavorite(int streamId) async {
     try {
       await database.toggleFavorite(streamId);
+      // Optional: Clear cache to reflect favorite status if needed, 
+      // but usually favoriting doesn't change the list structure.
       return const Right(unit);
     } catch (e) {
       return Left(DatabaseFailure(e.toString()));
@@ -56,5 +67,10 @@ class StreamRepositoryImpl implements StreamRepository {
     } catch (e) {
       return Left(DatabaseFailure(e.toString()));
     }
+  }
+
+  @override
+  void clearCache() {
+    _cache.clear();
   }
 }

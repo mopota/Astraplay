@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../../injection_container.dart';
 import '../../../../core/database/app_database.dart';
 import '../../../playlist/domain/entities/playlist.entity.dart';
 import '../../domain/repositories/category_repository.dart';
+import 'package:dartz/dartz.dart' as dartz;
+import '../../../../core/errors/failures.dart';
+import '../../domain/repositories/category_repository.dart' as repo;
 
 class CategoryPage extends StatelessWidget {
   final PlaylistEntity playlist;
@@ -70,16 +72,29 @@ class CategoryPage extends StatelessWidget {
   }
 }
 
-class _CategoryList extends StatelessWidget {
+class _CategoryList extends StatefulWidget {
   final int playlistId;
   final StreamType type;
 
   const _CategoryList({required this.playlistId, required this.type});
 
   @override
+  State<_CategoryList> createState() => _CategoryListState();
+}
+
+class _CategoryListState extends State<_CategoryList> {
+  late Future<dartz.Either<Failure, List<repo.CategoryEntity>>> _categoriesFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _categoriesFuture = sl<CategoryRepository>().getCategories(widget.playlistId, widget.type);
+  }
+
+  @override
   Widget build(BuildContext context) {
     return FutureBuilder(
-      future: sl<CategoryRepository>().getCategories(playlistId, type),
+      future: _categoriesFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
@@ -169,7 +184,7 @@ class _CategoryList extends StatelessWidget {
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Icon(
-                  _getIconForType(type),
+                  _getIconForType(widget.type),
                   color: colorScheme.primary,
                   size: 20,
                 ),
@@ -206,9 +221,9 @@ class _CategoryList extends StatelessWidget {
 
   void _navigateToStreams(BuildContext context, String categoryName) {
     context.push('/playlists/categories/streams', extra: {
-      'playlistId': playlistId,
+      'playlistId': widget.playlistId,
       'category': categoryName,
-      'type': type.name,
+      'type': widget.type.name,
     });
   }
 

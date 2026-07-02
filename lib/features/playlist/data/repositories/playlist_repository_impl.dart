@@ -10,6 +10,9 @@ import '../../../../core/utils/background_parser.dart';
 import '../../domain/entities/playlist.entity.dart';
 import '../../domain/repositories/playlist_repository.dart';
 import 'package:astraplay/features/playlist/data/datasources/playlist_remote_data_source.dart';
+import '../../../category/domain/repositories/category_repository.dart';
+import '../../../category/domain/repositories/stream_repository.dart';
+import '../../../../injection_container.dart';
 
 class PlaylistRepositoryImpl implements PlaylistRepository {
   final db.AppDatabase database;
@@ -353,10 +356,18 @@ class PlaylistRepositoryImpl implements PlaylistRepository {
   Future<Either<Failure, Unit>> deletePlaylist(int id) async {
     try {
       await database.deletePlaylist(id);
+      _clearAllCaches();
       return const Right(unit);
     } catch (e) {
       return Left(DatabaseFailure(e.toString()));
     }
+  }
+
+  void _clearAllCaches() {
+    try {
+      sl<CategoryRepository>().clearCache();
+      sl<StreamRepository>().clearCache();
+    } catch (_) {}
   }
 
   @override
@@ -364,6 +375,8 @@ class PlaylistRepositoryImpl implements PlaylistRepository {
     try {
       final playlist = await database.isar.playlists.get(id);
       if (playlist == null) return const Left(DatabaseFailure('Playlist not found'));
+      
+      _clearAllCaches();
       
       if (playlist.type == db.PlaylistType.m3uUrl) {
         if (playlist.info.username != null && playlist.info.password != null) {

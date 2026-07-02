@@ -3,11 +3,9 @@ import 'dart:convert';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:intl/intl.dart';
 import 'package:isar_community/isar.dart';
 import '../../../../features/playlist/domain/entities/playlist.entity.dart';
 import '../../../../features/playlist/domain/repositories/playlist_repository.dart';
@@ -28,7 +26,6 @@ class _HomePageState extends State<HomePage> {
   final Map<int, AppStream> _historyStreams = {};
   bool _isLoading = true;
   Playlist? _activePlaylist;
-  static DateTime? _lastAutoRefresh;
   StreamSubscription? _streamsSubscription;
   StreamSubscription? _historySubscription;
 
@@ -41,13 +38,9 @@ class _HomePageState extends State<HomePage> {
 
   void _initWatchers() {
     final db = sl<AppDatabase>();
-    
-    // Watch for changes in streams (favorites)
     _streamsSubscription = db.isar.appStreams.watchLazy().listen((_) {
       _loadData(isInitial: false, silent: true);
     });
-
-    // Watch for changes in history
     _historySubscription = db.isar.historyRecords.watchLazy().listen((_) {
       _loadData(isInitial: false, silent: true);
     });
@@ -62,7 +55,6 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _loadData({bool isInitial = false, bool silent = false}) async {
     if (!mounted) return;
-    
     if (!silent) setState(() => _isLoading = true);
     
     final db = sl<AppDatabase>();
@@ -75,40 +67,25 @@ class _HomePageState extends State<HomePage> {
 
     final activePlaylist = await db.isar.playlists.get(activePlaylistId);
     
-    // Auto Refresh logic for remote playlists
-    if (isInitial && activePlaylist != null) {
-      final isRemote = activePlaylist.type == PlaylistType.m3uUrl || 
-                       activePlaylist.type == PlaylistType.xtream;
-      
-      final needsRefresh = activePlaylist.lastRefresh == null || 
-          DateTime.now().difference(activePlaylist.lastRefresh!).inHours >= 12;
-
-      final sessionNeedsRefresh = _lastAutoRefresh == null || 
-          DateTime.now().difference(_lastAutoRefresh!).inMinutes >= 30;
-
-      if (isRemote && needsRefresh && sessionNeedsRefresh) {
-        _lastAutoRefresh = DateTime.now();
-        unawaited(_refreshPlaylist(activePlaylist.id));
-      }
-    }
-
-    // Fetch Favorites ONLY for the active playlist
-    final favorites = await db.isar.appStreams
-        .filter()
+    // 1. Fetch Favorites for active playlist
+    final favorites = await db.isar.appStreams.filter()
         .playlistIdEqualTo(activePlaylistId)
         .isFavoriteEqualTo(true)
         .limit(20)
         .findAll();
 
-    // Fetch History
-    final history = await db.isar.historyRecords
+    // 2. Fetch History using a robust way that doesn't depend on generated playlistIdEqualTo if it's missing
+    // We get all history records and filter them by the current playlist's streams
+    final allHistory = await db.isar.historyRecords
         .where()
         .sortByLastWatchedDesc()
+        .limit(50) // Get more to account for other playlists
         .findAll();
     
     _historyStreams.clear();
     final List<HistoryRecord> filteredHistory = [];
-    for (var h in history) {
+    
+    for (var h in allHistory) {
       final stream = await db.isar.appStreams.get(h.streamId);
       if (stream != null && stream.playlistId == activePlaylistId) {
         _historyStreams[h.streamId] = stream;
@@ -127,65 +104,31 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  Future<void> _handleManualRefresh() async {
-    final activePlaylistId = sl<SettingsCubit>().state.settings.activePlaylistId;
-    if (activePlaylistId != null) {
-      await _refreshPlaylist(activePlaylistId);
-    } else {
-      await _loadData();
-    }
-  }
-
-  Future<void> _refreshPlaylist(int id) async {
-    try {
-      final repo = sl<PlaylistRepository>();
-      await repo.refreshPlaylist(id);
-      if (mounted) {
-        await _loadData();
-      }
-    } catch (e) {
-      debugPrint('Auto-refresh error: $e');
-    }
-  }
-
   Future<void> _navigateToPlayer(Map<String, dynamic> extra) async {
     await context.push('/player', extra: extra);
-    if (mounted) {
-      await _loadData();
-    }
+    if (mounted) await _loadData(silent: true);
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
+    final colorScheme = Theme.of(context).colorScheme;
 
-    // Use BlocListener to reload data when playlist changes
     return BlocListener<SettingsCubit, SettingsState>(
-      listenWhen: (previous, current) => 
-          previous.settings.activePlaylistId != current.settings.activePlaylistId,
-      listener: (context, state) {
-        _loadData(isInitial: true);
-      },
+      listenWhen: (prev, curr) => prev.settings.activePlaylistId != curr.settings.activePlaylistId,
+      listener: (context, state) => _loadData(isInitial: true),
       child: Scaffold(
         body: Container(
           decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [
-                colorScheme.surface,
-                colorScheme.surfaceContainerLow,
-              ],
+              colors: [colorScheme.surface, colorScheme.surfaceContainerLow],
             ),
           ),
           child: RefreshIndicator(
-            onRefresh: _handleManualRefresh,
-            displacement: 100,
+            onRefresh: () => _loadData(silent: false),
             child: CustomScrollView(
-              physics: const AlwaysScrollableScrollPhysics(
-                parent: BouncingScrollPhysics(),
-              ),
+              physics: const BouncingScrollPhysics(),
               slivers: [
                 _buildModernAppBar(context),
                 
@@ -197,31 +140,17 @@ class _HomePageState extends State<HomePage> {
                 ),
 
                 if (!_isLoading && _history.isNotEmpty) ...[
-                  _buildSliverSectionHeader(context, 'Continue Watching', Icons.play_circle_outline_rounded),
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.only(bottom: 32),
-                      child: _buildContinueWatchingList(),
-                    ),
-                  ),
+                  _buildSectionHeader('Continue Watching', Icons.history_rounded),
+                  SliverToBoxAdapter(child: _buildHistoryList()),
                 ],
 
                 if (!_isLoading && _favorites.isNotEmpty) ...[
-                  _buildSliverSectionHeader(
-                    context, 
-                    'Your Favorites', 
-                    Icons.favorite_rounded,
-                    onSeeAll: () => unawaited(context.push('/favorites')),
-                  ),
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.only(bottom: 32),
-                      child: _buildFavoritesList(),
-                    ),
-                  ),
+                  _buildSectionHeader('Your Favorites', Icons.favorite_rounded, 
+                    onSeeAll: () => context.push('/favorites')),
+                  SliverToBoxAdapter(child: _buildFavoritesList()),
                 ],
 
-                const SliverToBoxAdapter(child: SizedBox(height: 100)),
+                const SliverToBoxAdapter(child: SizedBox(height: 120)),
               ],
             ),
           ),
@@ -232,17 +161,13 @@ class _HomePageState extends State<HomePage> {
 
   Widget _buildModernAppBar(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    
     return SliverAppBar(
       expandedHeight: 120,
-      collapsedHeight: 80,
       pinned: true,
       elevation: 0,
-      scrolledUnderElevation: 2,
       backgroundColor: colorScheme.surface.withAlpha(200),
       flexibleSpace: FlexibleSpaceBar(
         titlePadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-        centerTitle: false,
         title: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
@@ -250,24 +175,9 @@ class _HomePageState extends State<HomePage> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                 'Astra Play',
-                  style: GoogleFonts.poppins(
-                    fontWeight: FontWeight.w900,
-                    fontSize: 18,
-                    color: colorScheme.primary,
-                    letterSpacing: 1,
-                  ),
-                ),
-                Text(
-                  _activePlaylist?.name.toUpperCase() ?? 'ASTRA',
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w500,
-                    color: colorScheme.onSurfaceVariant,
-                    letterSpacing: 0.5,
-                  ),
-                ),
+                Text('Astra Play', style: GoogleFonts.poppins(fontWeight: FontWeight.w900, fontSize: 18, color: colorScheme.primary)),
+                if (_activePlaylist != null)
+                  Text(_activePlaylist!.name.toUpperCase(), style: TextStyle(fontSize: 10, color: colorScheme.outline)),
               ],
             ),
             Row(
@@ -281,18 +191,12 @@ class _HomePageState extends State<HomePage> {
                 ),
                 const SizedBox(width: 8),
                 IconButton.filledTonal(
-                  onPressed: () => unawaited(context.push('/settings')),
+                  onPressed: () => context.push('/settings'),
                   icon: const Icon(Icons.settings_outlined, size: 20),
                 ),
               ],
             ),
           ],
-        ),
-        background: ClipRect(
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-            child: Container(color: Colors.transparent),
-          ),
         ),
       ),
     );
@@ -311,49 +215,17 @@ class _HomePageState extends State<HomePage> {
           crossAxisSpacing: 16,
           childAspectRatio: 1.4,
           children: [
-            _buildDashboardItem(
-              context,
-              'LIVE TV',
-              Icons.live_tv_rounded,
-              Colors.orange,
-              () => _handleQuickAction(context, StreamType.live),
-            ),
-            _buildDashboardItem(
-              context,
-              'MOVIES',
-              Icons.movie_filter_rounded,
-              Colors.blue,
-              () => _handleQuickAction(context, StreamType.movie),
-            ),
-            _buildDashboardItem(
-              context,
-              'SERIES',
-              Icons.video_library_rounded,
-              Colors.purple,
-              () => _handleQuickAction(context, StreamType.series),
-            ),
-            _buildDashboardItem(
-              context,
-              'FAVORITES',
-              Icons.favorite_outline_rounded,
-              Colors.red,
-              () => unawaited(context.push('/favorites')),
-            ),
+            _buildDashboardItem('LIVE TV', Icons.live_tv_rounded, Colors.orange, () => _handleQuickAction(context, StreamType.live)),
+            _buildDashboardItem('MOVIES', Icons.movie_filter_rounded, Colors.blue, () => _handleQuickAction(context, StreamType.movie)),
+            _buildDashboardItem('SERIES', Icons.video_library_rounded, Colors.purple, () => _handleQuickAction(context, StreamType.series)),
+            _buildDashboardItem('FAVORITES', Icons.favorite_rounded, Colors.red, () => context.push('/favorites')),
           ],
         ),
       ],
     );
   }
 
-  Widget _buildDashboardItem(
-    BuildContext context, 
-    String title, 
-    IconData icon, 
-    Color color,
-    VoidCallback onTap,
-  ) {
-    final colorScheme = Theme.of(context).colorScheme;
-    
+  Widget _buildDashboardItem(String title, IconData icon, Color color, VoidCallback onTap) {
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -363,29 +235,14 @@ class _HomePageState extends State<HomePage> {
           decoration: BoxDecoration(
             color: color.withAlpha(25),
             borderRadius: BorderRadius.circular(28),
-            border: Border.all(color: color.withAlpha(50), width: 1),
+            border: Border.all(color: color.withAlpha(50)),
           ),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: color.withAlpha(40),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(icon, color: color, size: 28),
-              ),
+              Icon(icon, color: color, size: 32),
               const SizedBox(height: 12),
-              Text(
-                title,
-                style: GoogleFonts.poppins(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 14,
-                  letterSpacing: 1,
-                  color: color.withAlpha(220),
-                ),
-              ),
+              Text(title, style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 14, color: color)),
             ],
           ),
         ),
@@ -395,9 +252,8 @@ class _HomePageState extends State<HomePage> {
 
   Widget _buildSearchShortcut(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    
     return GestureDetector(
-      onTap: () => unawaited(context.push('/search')),
+      onTap: () => context.push('/search'),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
         decoration: BoxDecoration(
@@ -409,21 +265,14 @@ class _HomePageState extends State<HomePage> {
           children: [
             Icon(Icons.search_rounded, color: colorScheme.primary, size: 24),
             const SizedBox(width: 16),
-            Text(
-              'Search for content...',
-              style: TextStyle(
-                color: colorScheme.onSurfaceVariant.withAlpha(150),
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
+            Text('Search for content...', style: TextStyle(color: colorScheme.outline, fontSize: 16)),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildSliverSectionHeader(BuildContext context, String title, IconData icon, {VoidCallback? onSeeAll}) {
+  Widget _buildSectionHeader(String title, IconData icon, {VoidCallback? onSeeAll}) {
     return SliverToBoxAdapter(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 0, 10, 16),
@@ -431,29 +280,19 @@ class _HomePageState extends State<HomePage> {
           children: [
             Icon(icon, size: 20, color: Theme.of(context).colorScheme.primary),
             const SizedBox(width: 10),
-            Text(
-              title,
-              style: GoogleFonts.poppins(
-                fontSize: 20,
-                fontWeight: FontWeight.w800,
-                letterSpacing: -0.5,
-              ),
-            ),
+            Text(title, style: GoogleFonts.poppins(fontSize: 20, fontWeight: FontWeight.w800)),
             const Spacer(),
             if (onSeeAll != null)
-              TextButton(
-                onPressed: onSeeAll,
-                child: const Text('See All'),
-              ),
+              TextButton(onPressed: onSeeAll, child: const Text('See All')),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildContinueWatchingList() {
+  Widget _buildHistoryList() {
     return SizedBox(
-      height: 200,
+      height: 180,
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -463,86 +302,51 @@ class _HomePageState extends State<HomePage> {
           final h = _history[index];
           final stream = _historyStreams[h.streamId];
           if (stream == null) return const SizedBox();
-
-          Map<String, dynamic>? episodeInfo;
+          
+          Map<String, dynamic>? epInfo;
           if (h.episodeMetadata != null) {
             try {
-              episodeInfo = jsonDecode(h.episodeMetadata!);
+              epInfo = jsonDecode(h.episodeMetadata!);
             } catch (_) {}
           }
-
-          final displayTitle = episodeInfo != null 
-              ? '${stream.name} - ${episodeInfo['name']}'
-              : stream.name;
-          
-          final streamUrl = episodeInfo != null 
-              ? episodeInfo['url'] 
-              : stream.data.streamUrl;
+          final title = epInfo != null ? '${stream.name} - ${epInfo['name']}' : stream.name;
 
           return Container(
-            width: 300,
+            width: 280,
             margin: const EdgeInsets.only(right: 20),
             child: InkWell(
               onTap: () => _navigateToPlayer({
-                'streamUrl': streamUrl,
-                'title': displayTitle,
+                'streamUrl': epInfo != null ? epInfo['url'] : stream.data.streamUrl,
+                'title': title,
                 'streamId': stream.id,
                 'episodeMetadata': h.episodeMetadata,
-                'headers': stream.data.headersJson != null 
-                    ? Map<String, String>.from(jsonDecode(stream.data.headersJson!)) 
-                    : null,
+                'headers': stream.data.headersJson != null ? Map<String, String>.from(jsonDecode(stream.data.headersJson!)) : null,
               }),
               borderRadius: BorderRadius.circular(28),
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  Container(
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(28),
-                      border: Border.all(color: Theme.of(context).colorScheme.outlineVariant.withAlpha(50)),
-                    ),
-                    clipBehavior: Clip.antiAlias,
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(28),
                     child: CachedNetworkImage(
                       imageUrl: stream.data.logoUrl ?? '',
                       fit: BoxFit.cover,
-                      errorWidget: (_, __, ___) => Container(
-                        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                        child: const Icon(Icons.play_circle_outline_rounded, size: 48),
-                      ),
+                      errorWidget: (_, __, ___) => Container(color: Colors.black12, child: const Icon(Icons.play_circle_outline, size: 48)),
                     ),
                   ),
-                  Container(
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(28),
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [Colors.transparent, Colors.black.withAlpha(180)],
-                      ),
-                    ),
-                  ),
+                  Container(decoration: BoxDecoration(borderRadius: BorderRadius.circular(28), gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.transparent, Colors.black87]))),
                   Positioned(
-                    bottom: 16,
-                    left: 16,
-                    right: 16,
+                    bottom: 16, left: 16, right: 16,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          displayTitle,
-                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                        Text(title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold), maxLines: 1, overflow: TextOverflow.ellipsis),
                         const SizedBox(height: 8),
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(4),
-                          child: LinearProgressIndicator(
-                            value: h.totalDuration > 0 ? (h.lastPosition / h.totalDuration).clamp(0.0, 1.0) : 0,
-                            backgroundColor: Colors.white.withAlpha(50),
-                            color: Theme.of(context).colorScheme.primary,
-                            minHeight: 4,
-                          ),
+                        LinearProgressIndicator(
+                          value: h.totalDuration > 0 ? h.lastPosition / h.totalDuration : 0,
+                          backgroundColor: Colors.white24,
+                          color: Theme.of(context).colorScheme.primary,
+                          minHeight: 4,
                         ),
                       ],
                     ),
@@ -558,7 +362,7 @@ class _HomePageState extends State<HomePage> {
 
   Widget _buildFavoritesList() {
     return SizedBox(
-      height: 180,
+      height: 160,
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -566,17 +370,20 @@ class _HomePageState extends State<HomePage> {
         itemBuilder: (context, index) {
           final stream = _favorites[index];
           return Container(
-            width: 140,
+            width: 120,
             margin: const EdgeInsets.only(right: 16),
             child: InkWell(
               onTap: () {
                 if (stream.streamType == StreamType.series) {
                   context.push('/series-details', extra: {'stream': stream});
+                } else if (stream.streamType == StreamType.movie) {
+                  context.push('/movie-details', extra: {'stream': stream});
                 } else {
                   _navigateToPlayer({
-                    'streamUrl': stream.data.streamUrl,
-                    'title': stream.name,
+                    'streamUrl': stream.data.streamUrl, 
+                    'title': stream.name, 
                     'streamId': stream.id,
+                    'headers': stream.data.headersJson != null ? Map<String, String>.from(jsonDecode(stream.data.headersJson!)) : null,
                   });
                 }
               },
@@ -584,33 +391,13 @@ class _HomePageState extends State<HomePage> {
               child: Column(
                 children: [
                   Expanded(
-                    child: Container(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(24),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withAlpha(40),
-                            blurRadius: 12,
-                            offset: const Offset(0, 6),
-                          ),
-                        ],
-                      ),
-                      clipBehavior: Clip.antiAlias,
-                      child: CachedNetworkImage(
-                        imageUrl: stream.data.logoUrl ?? '',
-                        fit: BoxFit.cover,
-                        errorWidget: (_, __, ___) => const Icon(Icons.favorite_rounded, color: Colors.red),
-                      ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(24),
+                      child: CachedNetworkImage(imageUrl: stream.data.logoUrl ?? '', fit: BoxFit.cover, errorWidget: (_, __, ___) => const Icon(Icons.favorite, color: Colors.red)),
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  Text(
-                    stream.name,
-                    maxLines: 1,
-                    textAlign: TextAlign.center,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                  ),
+                  const SizedBox(height: 8),
+                  Text(stream.name, maxLines: 1, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis),
                 ],
               ),
             ),
@@ -623,15 +410,12 @@ class _HomePageState extends State<HomePage> {
   void _handleQuickAction(BuildContext context, StreamType type) async {
     final activePlaylistId = sl<SettingsCubit>().state.settings.activePlaylistId;
     if (activePlaylistId == null) return;
-
     final db = sl<AppDatabase>();
     final playlist = await db.isar.playlists.get(activePlaylistId);
     if (playlist == null) return;
 
     final entity = PlaylistEntity(
-      id: playlist.id,
-      name: playlist.name,
-      type: playlist.type.name,
+      id: playlist.id, name: playlist.name, type: playlist.type.name,
       url: playlist.info.url ?? playlist.info.serverUrl,
       lastRefresh: playlist.lastRefresh,
       channelCount: playlist.info.channelCount,
@@ -639,11 +423,8 @@ class _HomePageState extends State<HomePage> {
       seriesCount: playlist.info.seriesCount,
     );
     
-    if (!context.mounted) return;
-
-    unawaited(context.push('/playlists/categories', extra: {
-      'playlist': entity,
-      'type': type,
-    }));
+    if (context.mounted) {
+      context.push('/playlists/categories', extra: {'playlist': entity, 'type': type});
+    }
   }
 }

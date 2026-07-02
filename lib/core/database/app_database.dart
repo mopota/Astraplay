@@ -47,6 +47,7 @@ class PlaylistInfo {
 class AppStream {
   Id id = Isar.autoIncrement;
 
+  @Index()
   int playlistId = 0;
 
   @Index()
@@ -77,13 +78,18 @@ class StreamData {
 class HistoryRecord {
   Id id = Isar.autoIncrement;
 
+  @Index()
   late int streamId;
+  
+  @Index()
   int playlistId = 0;
 
   String? episodeMetadata; // JSON for Xtream episode info (url, title, etc)
 
   int lastPosition = 0;
   int totalDuration = 0;
+  
+  @Index()
   DateTime lastWatched = DateTime.now();
 }
 

@@ -7,4 +7,5 @@ abstract class StreamRepository {
   Future<Either<Failure, Unit>> toggleFavorite(int streamId);
   Future<Either<Failure, bool>> isFavorite(int streamId);
   Future<Either<Failure, Unit>> addToHistory(int streamId, int position);
+  void clearCache();
 }
