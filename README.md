@@ -1,3 +1,6 @@
+<img width="1402" height="1122" alt="WhatsApp Image 2026-07-02 at 3 16 24 AM" src="https://github.com/user-attachments/assets/2878a555-b480-4757-a14a-391d1fcf1a95" />
+
+
 # AstraPlay - Premium IPTV Streaming Application
 
 A complete, production-ready IPTV streaming application built with Flutter using Feature-First Clean Architecture.
