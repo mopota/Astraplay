@@ -20,15 +20,16 @@ class CategoryRepositoryImpl implements CategoryRepository {
     }
 
     try {
-      final streams = await database.isar.appStreams
+      final categoryNames = await database.isar.appStreams
           .filter()
           .playlistIdEqualTo(playlistId)
           .streamTypeEqualTo(type)
+          .categoryNameProperty()
           .findAll();
 
       final categoryMap = <String, int>{};
-      for (var s in streams) {
-        categoryMap[s.categoryName] = (categoryMap[s.categoryName] ?? 0) + 1;
+      for (var name in categoryNames) {
+        categoryMap[name] = (categoryMap[name] ?? 0) + 1;
       }
 
       final categories = categoryMap.entries.map((e) => CategoryEntity(

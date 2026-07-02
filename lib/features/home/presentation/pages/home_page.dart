@@ -67,30 +67,42 @@ class _HomePageState extends State<HomePage> {
 
     final activePlaylist = await db.isar.playlists.get(activePlaylistId);
     
-    // 1. Fetch Favorites for active playlist
-    final favorites = await db.isar.appStreams.filter()
-        .playlistIdEqualTo(activePlaylistId)
-        .isFavoriteEqualTo(true)
-        .limit(20)
-        .findAll();
+    // 1. Fetch Favorites and History Records in parallel
+    // We fetch history without playlist filter to avoid the missing method error
+    final results = await Future.wait([
+      db.isar.appStreams.filter()
+          .playlistIdEqualTo(activePlaylistId)
+          .isFavoriteEqualTo(true)
+          .limit(20)
+          .findAll(),
+      db.isar.historyRecords
+          .where()
+          .sortByLastWatchedDesc()
+          .limit(100) // Fetch more to find enough for this playlist
+          .findAll(),
+    ]);
 
-    // 2. Fetch History using a robust way that doesn't depend on generated playlistIdEqualTo if it's missing
-    // We get all history records and filter them by the current playlist's streams
-    final allHistory = await db.isar.historyRecords
-        .where()
-        .sortByLastWatchedDesc()
-        .limit(50) // Get more to account for other playlists
-        .findAll();
+    final favorites = results[0] as List<AppStream>;
+    final historyRecords = results[1] as List<HistoryRecord>;
     
+    // 2. Batch fetch streams and filter by playlistId in memory
     _historyStreams.clear();
     final List<HistoryRecord> filteredHistory = [];
     
-    for (var h in allHistory) {
-      final stream = await db.isar.appStreams.get(h.streamId);
-      if (stream != null && stream.playlistId == activePlaylistId) {
-        _historyStreams[h.streamId] = stream;
-        filteredHistory.add(h);
-        if (filteredHistory.length >= 20) break;
+    if (historyRecords.isNotEmpty) {
+      final streamIds = historyRecords.map((h) => h.streamId).toList();
+      final streams = await db.isar.appStreams.getAll(streamIds);
+      
+      for (var i = 0; i < historyRecords.length; i++) {
+        final h = historyRecords[i];
+        final s = streams[i];
+        
+        // Check if stream exists and belongs to active playlist
+        if (s != null && s.playlistId == activePlaylistId) {
+          _historyStreams[h.streamId] = s;
+          filteredHistory.add(h);
+          if (filteredHistory.length >= 20) break; // Limit to 20 items
+        }
       }
     }
 

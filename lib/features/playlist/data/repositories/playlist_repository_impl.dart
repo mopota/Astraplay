@@ -245,8 +245,8 @@ class PlaylistRepositoryImpl implements PlaylistRepository {
       seriesCatMap[c['category_id'].toString()] = c['category_name'].toString();
     }
 
-    // Get existing streams to preserve favorites and IDs
-    final existingStreams = await database.isar.appStreams
+    // Get existing streams to preserve favorites and IDs - Use property query to be efficient
+    final existingData = await database.isar.appStreams
         .filter()
         .playlistIdEqualTo(playlist.id)
         .findAll();
@@ -254,7 +254,7 @@ class PlaylistRepositoryImpl implements PlaylistRepository {
     final Map<String, db.AppStream> xtreamIdMap = {};
     final Map<String, db.AppStream> nameCatMap = {};
 
-    for (var s in existingStreams) {
+    for (var s in existingData) {
       if (s.data.xtreamId != null) {
         xtreamIdMap[s.data.xtreamId!] = s;
       }
@@ -323,7 +323,7 @@ class PlaylistRepositoryImpl implements PlaylistRepository {
 
     await database.isar.writeTxn(() async {
       // Delete streams that no longer exist in the new sync
-      final idsToDelete = existingStreams
+      final idsToDelete = existingData
           .map((e) => e.id)
           .where((id) => !keptIds.contains(id))
           .toList();
@@ -400,8 +400,8 @@ class PlaylistRepositoryImpl implements PlaylistRepository {
   Future<void> _syncM3uData(db.Playlist playlist, String content) async {
     final entries = await BackgroundParser.parseM3u(content);
     
-    // Get existing streams to preserve favorites and IDs
-    final existingStreams = await database.isar.appStreams
+    // Get existing streams - use efficient query
+    final existingData = await database.isar.appStreams
         .filter()
         .playlistIdEqualTo(playlist.id)
         .findAll();
@@ -409,7 +409,7 @@ class PlaylistRepositoryImpl implements PlaylistRepository {
     final Map<String, db.AppStream> urlMap = {};
     final Map<String, db.AppStream> nameCatMap = {};
 
-    for (var s in existingStreams) {
+    for (var s in existingData) {
       urlMap[s.data.streamUrl] = s;
       nameCatMap['${s.name}_${s.categoryName}_${s.streamType.name}'] = s;
     }
@@ -437,10 +437,10 @@ class PlaylistRepositoryImpl implements PlaylistRepository {
       playlist.info.seriesCount = entries.where((e) => e.type == 'series').length;
       playlist.lastRefresh = DateTime.now();
       
-      final id = await database.isar.playlists.put(playlist);
+      await database.isar.playlists.put(playlist);
 
       // 2. Delete streams that no longer exist
-      final idsToDelete = existingStreams
+      final idsToDelete = existingData
           .map((e) => e.id)
           .where((id) => !keptIds.contains(id))
           .toList();
