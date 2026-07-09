@@ -97,7 +97,7 @@ class _CategoryListState extends State<_CategoryList> {
       future: _categoriesFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
+          return const SizedBox.shrink();
         }
         
         final result = snapshot.data;

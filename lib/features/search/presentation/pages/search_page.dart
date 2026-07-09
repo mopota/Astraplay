@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:isar_community/isar.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -60,11 +59,11 @@ class _SearchPageState extends State<SearchPage> {
   void _onSearchChanged(String query) {
     if (_debounce?.isActive ?? false) _debounce?.cancel();
     _debounce = Timer(const Duration(milliseconds: 500), () {
-      _performSearch(query);
+      unawaited(_performSearch(query));
     });
   }
 
-  void _performSearch(String query) async {
+  Future<void> _performSearch(String query) async {
     if (query.isEmpty) {
       setState(() => _localResults = []);
       return;
@@ -130,7 +129,7 @@ class _SearchPageState extends State<SearchPage> {
   Widget _buildLocalResults() {
     final colorScheme = Theme.of(context).colorScheme;
     
-    if (_isLoading) return const Center(child: CircularProgressIndicator());
+    if (_isLoading) return const SizedBox.shrink();
     
     if (_localResults.isEmpty) {
       return Padding(
@@ -162,7 +161,7 @@ class _SearchPageState extends State<SearchPage> {
                   label: Text(q),
                   onPressed: () {
                     _controller.text = q;
-                    _performSearch(q);
+                    unawaited(_performSearch(q));
                   },
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   backgroundColor: colorScheme.surfaceContainerHighest.withAlpha(100),
@@ -307,29 +306,29 @@ class _SearchPageState extends State<SearchPage> {
 
                 _saveToHistory(_controller.text);
                 if (context.mounted) {
-                  await context.push('/series-details', extra: {
+                  unawaited(context.push('/series-details', extra: {
                     'stream': stream,
                     'm3uEpisodes': m3uEpisodes,
-                  });
+                  }));
                 }
               } else if (stream.streamType == StreamType.movie) {
                 _saveToHistory(_controller.text);
                 if (context.mounted) {
-                  await context.push('/movie-details', extra: {
+                  unawaited(context.push('/movie-details', extra: {
                     'stream': stream,
-                  });
+                  }));
                 }
               } else {
                 _saveToHistory(_controller.text);
                 if (context.mounted) {
-                  await context.push('/player', extra: {
+                  unawaited(context.push('/player', extra: {
                     'streamUrl': stream.data.streamUrl,
                     'title': stream.name,
                     'streamId': stream.id,
                     'headers': stream.data.headersJson != null
                         ? Map<String, String>.from(jsonDecode(stream.data.headersJson!))
                         : null,
-                  });
+                  }));
                 }
               }
             },

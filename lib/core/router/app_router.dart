@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:isar_community/isar.dart';
 import '../../features/home/presentation/pages/favorites_page.dart';
 import '../../features/home/presentation/pages/home_page.dart';
 import '../../features/playlist/presentation/pages/playlist_page.dart';
@@ -20,7 +19,6 @@ import '../../features/source_management/presentation/pages/xtream_login_page.da
 import '../../features/source_management/presentation/pages/local_file_page.dart';
 import '../database/app_database.dart';
 import '../presentation/pages/error_page.dart';
-import '../../injection_container.dart' as di;
 
 import '../../features/onboarding/presentation/pages/onboarding_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';

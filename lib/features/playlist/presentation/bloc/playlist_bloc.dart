@@ -29,7 +29,7 @@ class PlaylistBloc extends Bloc<PlaylistEvent, PlaylistState> {
   }
 
   Future<void> _onAddDirectStream(AddDirectStreamEvent event, Emitter<PlaylistState> emit) async {
-    emit(state.copyWith(isLoading: true, error: null));
+    emit(state.copyWith(error: null));
     final result = await repository.addDirectStream(event.name, event.url);
     result.fold(
       (failure) => emit(state.copyWith(isLoading: false, error: failure.message)),
@@ -41,7 +41,7 @@ class PlaylistBloc extends Bloc<PlaylistEvent, PlaylistState> {
   }
 
   Future<void> _onAddM3uPlaylist(AddM3uPlaylistEvent event, Emitter<PlaylistState> emit) async {
-    emit(state.copyWith(isLoading: true, error: null));
+    emit(state.copyWith(error: null));
     final result = await repository.addM3uPlaylist(event.name, event.url);
     result.fold(
       (failure) => emit(state.copyWith(isLoading: false, error: failure.message)),
@@ -53,7 +53,7 @@ class PlaylistBloc extends Bloc<PlaylistEvent, PlaylistState> {
   }
 
   Future<void> _onAddXtreamPlaylist(AddXtreamPlaylistEvent event, Emitter<PlaylistState> emit) async {
-    emit(state.copyWith(isLoading: true, error: null));
+    emit(state.copyWith(error: null));
     final result = await repository.addXtreamPlaylist(
       name: event.name,
       url: event.url,
@@ -70,7 +70,7 @@ class PlaylistBloc extends Bloc<PlaylistEvent, PlaylistState> {
   }
 
   Future<void> _onDeletePlaylist(DeletePlaylistEvent event, Emitter<PlaylistState> emit) async {
-    emit(state.copyWith(isLoading: true, error: null));
+    emit(state.copyWith(error: null));
     final result = await repository.deletePlaylist(event.id);
     result.fold(
       (failure) => emit(state.copyWith(isLoading: false, error: failure.message)),
@@ -79,7 +79,7 @@ class PlaylistBloc extends Bloc<PlaylistEvent, PlaylistState> {
   }
 
   Future<void> _onRefreshPlaylist(RefreshPlaylistEvent event, Emitter<PlaylistState> emit) async {
-    emit(state.copyWith(isLoading: true, error: null));
+    emit(state.copyWith(error: null));
     final result = await repository.refreshPlaylist(event.id);
     result.fold(
       (failure) => emit(state.copyWith(isLoading: false, error: failure.message)),
@@ -88,7 +88,7 @@ class PlaylistBloc extends Bloc<PlaylistEvent, PlaylistState> {
   }
 
   Future<void> _onAddM3uFilePlaylist(AddM3uFilePlaylistEvent event, Emitter<PlaylistState> emit) async {
-    emit(state.copyWith(isLoading: true, error: null));
+    emit(state.copyWith(error: null));
     final result = await repository.addM3uFilePlaylist(event.name, event.filePath);
     result.fold(
       (failure) => emit(state.copyWith(isLoading: false, error: failure.message)),

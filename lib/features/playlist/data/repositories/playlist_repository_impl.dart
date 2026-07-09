@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:convert';
+import 'dart:async';
 import 'package:dartz/dartz.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -139,7 +140,14 @@ class PlaylistRepositoryImpl implements PlaylistRepository {
         ..type = db.PlaylistType.m3uUrl
         ..info = (db.PlaylistInfo()..url = normalizedUrl);
 
-      await _syncM3uData(playlist, content);
+      // Save initial metadata so the playlist appears immediately
+      await database.isar.writeTxn(() async {
+        await database.isar.playlists.put(playlist);
+      });
+
+      // Background sync - do not await
+      unawaited(_syncM3uData(playlist, content));
+      
       return const Right(unit);
     } catch (e) {
       if (e is Failure) return Left(e);
@@ -188,8 +196,8 @@ class PlaylistRepositoryImpl implements PlaylistRepository {
         await database.isar.playlists.put(playlist);
       });
 
-      // Sync data from Xtream
-      await _syncXtreamData(playlist);
+      // Sync data from Xtream in background
+      unawaited(_syncXtreamData(playlist));
 
       return const Right(unit);
     } catch (e) {
@@ -380,16 +388,20 @@ class PlaylistRepositoryImpl implements PlaylistRepository {
       
       if (playlist.type == db.PlaylistType.m3uUrl) {
         if (playlist.info.username != null && playlist.info.password != null) {
-          await _syncXtreamData(playlist);
+          unawaited(_syncXtreamData(playlist));
         } else {
-          final content = await remoteDataSource.fetchM3uContent(playlist.info.url!);
-          await _syncM3uData(playlist, content);
+          // Fetch and sync in background
+          remoteDataSource.fetchM3uContent(playlist.info.url!).then((content) {
+            unawaited(_syncM3uData(playlist, content));
+          }).catchError((e) {
+            debugPrint('Background refresh error: $e');
+          });
         }
       } else if (playlist.type == db.PlaylistType.m3uFile) {
         final content = await File(playlist.info.filePath!).readAsString();
-        await _syncM3uData(playlist, content);
+        unawaited(_syncM3uData(playlist, content));
       } else if (playlist.type == db.PlaylistType.xtream) {
-        await _syncXtreamData(playlist);
+        unawaited(_syncXtreamData(playlist));
       }
       return const Right(unit);
     } catch (e) {
@@ -465,7 +477,12 @@ class PlaylistRepositoryImpl implements PlaylistRepository {
         ..type = db.PlaylistType.m3uFile
         ..info = (db.PlaylistInfo()..filePath = filePath);
 
-      await _syncM3uData(playlist, content);
+      // Save initial metadata
+      await database.isar.writeTxn(() async {
+        await database.isar.playlists.put(playlist);
+      });
+
+      unawaited(_syncM3uData(playlist, content));
       return const Right(unit);
     } catch (e) {
       return Left(DatabaseFailure(e.toString()));

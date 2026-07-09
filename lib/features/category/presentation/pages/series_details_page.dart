@@ -8,6 +8,7 @@ import '../../../../core/database/app_database.dart';
 import '../../../../injection_container.dart';
 import 'package:dio/dio.dart';
 import 'dart:convert';
+import 'dart:async';
 
 class SeriesDetailsPage extends StatefulWidget {
   final AppStream stream;
@@ -52,7 +53,7 @@ class _SeriesDetailsPageState extends State<SeriesDetailsPage> {
 
     final Map<String, List<Map<String, String>>> grouped = {};
 
-    for (var ep in episodes) {
+    for (final ep in episodes) {
       String season = ep['season'] ?? '1';
       // Normalize season: "01" -> "1", "Season 1" -> "1"
       final match = RegExp(r'(\d+)').firstMatch(season);
@@ -66,8 +67,8 @@ class _SeriesDetailsPageState extends State<SeriesDetailsPage> {
     // Sort episodes within each season by episode number
     grouped.forEach((season, epList) {
       epList.sort((a, b) {
-        int? na = int.tryParse(a['number'] ?? '');
-        int? nb = int.tryParse(b['number'] ?? '');
+        final na = int.tryParse(a['number'] ?? '');
+        final nb = int.tryParse(b['number'] ?? '');
         if (na != null && nb != null) return na.compareTo(nb);
         return (a['name'] ?? '').compareTo(b['name'] ?? '');
       });
@@ -77,12 +78,13 @@ class _SeriesDetailsPageState extends State<SeriesDetailsPage> {
       setState(() {
         _seasons = grouped;
         if (grouped.keys.isNotEmpty) {
-          final sortedKeys = grouped.keys.toList()..sort((a, b) {
-            int? na = int.tryParse(a);
-            int? nb = int.tryParse(b);
-            if (na != null && nb != null) return na.compareTo(nb);
-            return a.compareTo(b);
-          });
+          final sortedKeys = grouped.keys.toList()
+            ..sort((a, b) {
+              final na = int.tryParse(a);
+              final nb = int.tryParse(b);
+              if (na != null && nb != null) return na.compareTo(nb);
+              return a.compareTo(b);
+            });
           _selectedSeason = sortedKeys.first;
         } else {
           _selectedSeason = null;
@@ -104,7 +106,7 @@ class _SeriesDetailsPageState extends State<SeriesDetailsPage> {
       final watched = <String>{};
       Map<String, dynamic>? lastEp;
       
-      for (var record in history) {
+      for (final record in history) {
         if (record.episodeMetadata != null) {
           try {
             final data = jsonDecode(record.episodeMetadata!);
@@ -179,7 +181,7 @@ class _SeriesDetailsPageState extends State<SeriesDetailsPage> {
           if (episodesData is Map) {
             episodesData.forEach((seasonKey, epList) {
               if (epList is List) {
-                for (var e in epList) {
+                for (final e in epList) {
                   final id = e['id'] ?? e['stream_id'];
                   if (id == null) continue;
                   
@@ -203,7 +205,7 @@ class _SeriesDetailsPageState extends State<SeriesDetailsPage> {
               }
             });
           } else if (episodesData is List) {
-            for (var e in episodesData) {
+            for (final e in episodesData) {
               final id = e['id'] ?? e['stream_id'];
               if (id == null) continue;
 
@@ -275,7 +277,7 @@ class _SeriesDetailsPageState extends State<SeriesDetailsPage> {
 
     if (m3uList.isNotEmpty) {
       final List<Map<String, String>> result = [];
-      for (var e in m3uList) {
+      for (final e in m3uList) {
         final name = e.name.toLowerCase();
         String season = '1';
         String episode = '';
@@ -324,7 +326,7 @@ class _SeriesDetailsPageState extends State<SeriesDetailsPage> {
           
           if (_isLoading)
             const SliverFillRemaining(
-              child: Center(child: CircularProgressIndicator()),
+              child: SizedBox.shrink(),
             )
           else if (_seasons.isEmpty)
             const SliverFillRemaining(
@@ -357,7 +359,7 @@ class _SeriesDetailsPageState extends State<SeriesDetailsPage> {
             Row(
               children: [
                 if (rating != null && rating != '0') ...[
-                  Icon(Icons.star_rounded, color: Colors.amber, size: 20),
+                  const Icon(Icons.star_rounded, color: Colors.amber, size: 20),
                   const SizedBox(width: 4),
                   Text(
                     rating,
@@ -402,7 +404,7 @@ class _SeriesDetailsPageState extends State<SeriesDetailsPage> {
                 child: FilledButton.icon(
                   onPressed: () {
                     final ep = _lastWatchedEpisode!.cast<String, String>();
-                    String? targetSeason = ep['season'];
+                    final String? targetSeason = ep['season'];
                     if (targetSeason != null && _seasons.containsKey(targetSeason)) {
                        setState(() => _selectedSeason = targetSeason);
                     }
@@ -514,8 +516,8 @@ class _SeriesDetailsPageState extends State<SeriesDetailsPage> {
   Widget _buildSeasonSelector(ColorScheme colorScheme) {
     final sortedSeasons = _seasons.keys.toList()
       ..sort((a, b) {
-        int? na = int.tryParse(a);
-        int? nb = int.tryParse(b);
+        final na = int.tryParse(a);
+        final nb = int.tryParse(b);
         if (na != null && nb != null) return na.compareTo(nb);
         return a.compareTo(b);
       });
@@ -720,6 +722,8 @@ class _SeriesDetailsPageState extends State<SeriesDetailsPage> {
     });
     
     // Refresh history when coming back to ensure sync
-    _refreshHistory();
+    if (mounted) {
+      unawaited(_refreshHistory());
+    }
   }
 }

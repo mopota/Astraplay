@@ -6,7 +6,6 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../../injection_container.dart';
 import '../../../../core/database/app_database.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 import '../../domain/repositories/stream_repository.dart';
 import 'package:dartz/dartz.dart' as dartz;
 import '../../../../core/errors/failures.dart';
@@ -81,9 +80,7 @@ class _StreamListPageState extends State<StreamListPage> {
               future: _streamsFuture,
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const SliverFillRemaining(
-                    child: Center(child: CircularProgressIndicator()),
-                  );
+                  return const SliverToBoxAdapter(child: SizedBox.shrink());
                 }
                 final result = snapshot.data;
                 if (result == null) return const SliverToBoxAdapter(child: SizedBox());

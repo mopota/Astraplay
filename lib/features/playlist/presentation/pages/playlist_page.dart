@@ -2,13 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../domain/entities/playlist.entity.dart';
 import '../bloc/playlist_bloc.dart';
 import '../../../settings/presentation/cubit/settings_cubit.dart';
-import '../../../../core/database/app_database.dart';
 import '../../../../injection_container.dart';
+import 'dart:async';
 
 class PlaylistPage extends StatelessWidget {
   const PlaylistPage({super.key});
@@ -149,7 +148,6 @@ class _PlaylistCard extends StatelessWidget {
     final colorScheme = theme.colorScheme;
     final isXtream = playlist.type == 'xtream';
     final isDirect = playlist.type == 'directStream';
-    final isM3u = !isXtream && !isDirect;
 
     Color brandColor;
     IconData icon;
@@ -320,10 +318,10 @@ class _PlaylistCard extends StatelessWidget {
     if (!context.mounted) return;
 
     if (playlist.type == 'directStream') {
-      context.push('/player', extra: {
+      unawaited(context.push('/player', extra: {
         'streamUrl': playlist.url,
         'title': playlist.name,
-      });
+      }));
     } else {
       context.go('/'); 
     }

@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../../core/database/app_database.dart';
@@ -45,7 +44,7 @@ class _MovieDetailsPageState extends State<MovieDetailsPage> {
 
     final plot = _metadata?['plot']?.toString() ?? _metadata?['description']?.toString();
     final rating = _metadata?['rating']?.toString() ?? _metadata?['rating_5based']?.toString();
-    final year = _metadata?['year']?.toString() ?? _metadata?['releaseDate']?.toString()?.split('-').first;
+    final year = _metadata?['year']?.toString() ?? _metadata?['releaseDate']?.toString().split('-').first;
     final director = _metadata?['director']?.toString();
     final cast = _metadata?['cast']?.toString();
     final genre = _metadata?['genre']?.toString();

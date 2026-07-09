@@ -39,6 +39,10 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
   String? _currentMetadata;
   int? _currentIndex;
   bool _isPopping = false;
+  
+  int _retryCount = 0;
+  Timer? _retryTimer;
+  bool _isReconnecting = false;
 
   @override
   void initState() {
@@ -64,8 +68,50 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
   @override
   void dispose() {
     _savePosition();
+    _retryTimer?.cancel();
+    _controller?.removeListener(_onControllerChanged);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  void _onControllerChanged() {
+    if (_controller == null) return;
+
+    // Detect if stream stopped unexpectedly
+    final isError = _controller!.error != null;
+    final isIdle = _controller!.playbackState == 'IDLE';
+    final isEnded = _controller!.playbackState == 'ENDED';
+
+    if ((isError || isIdle || isEnded) && !_isPopping && !_isReconnecting) {
+      // If it's a live stream or we were playing, try to reconnect
+      _handleReconnect();
+    }
+
+    if (_controller!.isPlaying && _isReconnecting) {
+      setState(() {
+        _isReconnecting = false;
+        _retryCount = 0;
+      });
+    }
+  }
+
+  void _handleReconnect() {
+    if (_retryCount >= 5) {
+      setState(() => _isReconnecting = false);
+      return;
+    }
+
+    _retryTimer?.cancel();
+    setState(() => _isReconnecting = true);
+    
+    _retryCount++;
+    final delay = Duration(seconds: _retryCount * 2);
+    
+    _retryTimer = Timer(delay, () async {
+      if (!mounted || _isPopping) return;
+      debugPrint('Attempting to reconnect stream... ($_retryCount)');
+      await _controller?.play(_currentUrl, headers: widget.headers);
+    });
   }
 
   void _savePosition() {
@@ -156,6 +202,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
                 headers: widget.headers,
                 onCreated: (controller) async {
                   setState(() => _controller = controller);
+                  controller.addListener(_onControllerChanged);
                   
                   if (widget.streamId != null) {
                     final lastPos = await sl<AppDatabase>().getLastPosition(
@@ -193,6 +240,36 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
             if (_controller == null)
               const Center(
                 child: CircularProgressIndicator(color: Colors.red),
+              ),
+            if (_isReconnecting)
+              Positioned(
+                top: 100,
+                left: 0,
+                right: 0,
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.black54,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        ),
+                        const SizedBox(width: 12),
+                        Text(
+                          'Reconnecting... ($_retryCount/5)',
+                          style: const TextStyle(color: Colors.white, fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               ),
           ],
         ),

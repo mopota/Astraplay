@@ -1,4 +1,3 @@
-import 'dart:ui';
 import 'dart:convert';
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -8,7 +7,6 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:isar_community/isar.dart';
 import '../../../../features/playlist/domain/entities/playlist.entity.dart';
-import '../../../../features/playlist/domain/repositories/playlist_repository.dart';
 import '../../../../injection_container.dart';
 import '../../../../core/database/app_database.dart';
 import '../../../settings/presentation/cubit/settings_cubit.dart';
@@ -24,7 +22,7 @@ class _HomePageState extends State<HomePage> {
   List<AppStream> _favorites = [];
   List<HistoryRecord> _history = [];
   final Map<int, AppStream> _historyStreams = {};
-  bool _isLoading = true;
+  bool _isLoading = false;
   Playlist? _activePlaylist;
   StreamSubscription? _streamsSubscription;
   StreamSubscription? _historySubscription;
@@ -53,10 +51,10 @@ class _HomePageState extends State<HomePage> {
     super.dispose();
   }
 
-  Future<void> _loadData({bool isInitial = false, bool silent = false}) async {
+  Future<void> _loadData({bool isInitial = false, bool silent = true}) async {
     if (!mounted) return;
     if (!silent) setState(() => _isLoading = true);
-    
+
     final db = sl<AppDatabase>();
     final activePlaylistId = sl<SettingsCubit>().state.settings.activePlaylistId;
 
@@ -436,7 +434,7 @@ class _HomePageState extends State<HomePage> {
     );
     
     if (context.mounted) {
-      context.push('/playlists/categories', extra: {'playlist': entity, 'type': type});
+      unawaited(context.push('/playlists/categories', extra: {'playlist': entity, 'type': type}));
     }
   }
 }

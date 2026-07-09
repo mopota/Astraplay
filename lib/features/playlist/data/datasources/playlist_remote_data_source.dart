@@ -10,7 +10,11 @@ abstract class PlaylistRemoteDataSource {
 class PlaylistRemoteDataSourceImpl implements PlaylistRemoteDataSource {
   final Dio dio;
 
-  PlaylistRemoteDataSourceImpl({required this.dio});
+  PlaylistRemoteDataSourceImpl({required this.dio}) {
+    dio.options.connectTimeout = const Duration(seconds: 10);
+    dio.options.receiveTimeout = const Duration(seconds: 15);
+    dio.options.sendTimeout = const Duration(seconds: 10);
+  }
 
   String _handleError(dynamic e) {
     if (e is DioException) {
