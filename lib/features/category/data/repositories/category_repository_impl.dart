@@ -1,5 +1,4 @@
 import 'package:dartz/dartz.dart';
-import 'package:isar_community/isar.dart';
 import '../../../../core/database/app_database.dart';
 import '../../../../core/errors/failures.dart';
 import '../../domain/repositories/category_repository.dart';
@@ -20,12 +19,7 @@ class CategoryRepositoryImpl implements CategoryRepository {
     }
 
     try {
-      final categoryNames = await database.isar.appStreams
-          .filter()
-          .playlistIdEqualTo(playlistId)
-          .streamTypeEqualTo(type)
-          .categoryNameProperty()
-          .findAll();
+      final categoryNames = await database.getCategoryNames(playlistId, type);
 
       final categoryMap = <String, int>{};
       for (var name in categoryNames) {

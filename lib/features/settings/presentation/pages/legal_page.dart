@@ -40,7 +40,7 @@ class LegalPage extends StatelessWidget {
     return _buildLegalContent(
       context,
       title: 'Privacy Policy',
-      lastUpdated: 'October 26, 2023',
+      lastUpdated: 'May 20, 2024',
       sections: [
         _LegalSection(
           title: '1. Information We Collect',
@@ -66,7 +66,7 @@ class LegalPage extends StatelessWidget {
     return _buildLegalContent(
       context,
       title: 'Terms of Service',
-      lastUpdated: 'October 26, 2023',
+      lastUpdated: 'May 20, 2024',
       sections: [
         _LegalSection(
           title: '1. Acceptance of Terms',
@@ -74,7 +74,7 @@ class LegalPage extends StatelessWidget {
         ),
         _LegalSection(
           title: '2. No Content Provided',
-          content: 'AstraPlay DOES NOT PROVIDE ANY CONTENT. We are a pure media player. Users are responsible for providing their own content, including M3U playlists and Xtream Codes credentials. We do not endorse the streaming of copyrighted material without permission.',
+          content: 'AstraPlay DOES NOT PROVIDE, DISTRIBUTE, OR HOST ANY MEDIA CONTENT OR PLAYLISTS. AstraPlay is a purely technical tool intended for playing content that the user already owns or has the legal right to access. We do not facilitate or encourage the streaming of unauthorized copyrighted material. Users are solely responsible for the content they add to the application.',
         ),
         _LegalSection(
           title: '3. Legal Use',

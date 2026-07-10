@@ -44,10 +44,11 @@ class PlaylistRepositoryImpl implements PlaylistRepository {
   }
 
   String _fixUrl(String url) {
-    if (url.startsWith('https://')) {
-      return url.replaceFirst('https://', 'http://');
+    String trimmed = url.trim();
+    if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) {
+      return 'http://$trimmed';
     }
-    return url;
+    return trimmed;
   }
 
   @override
@@ -140,14 +141,7 @@ class PlaylistRepositoryImpl implements PlaylistRepository {
         ..type = db.PlaylistType.m3uUrl
         ..info = (db.PlaylistInfo()..url = normalizedUrl);
 
-      // Save initial metadata so the playlist appears immediately
-      await database.isar.writeTxn(() async {
-        await database.isar.playlists.put(playlist);
-      });
-
-      // Background sync - do not await
-      unawaited(_syncM3uData(playlist, content));
-      
+      await _syncM3uData(playlist, content);
       return const Right(unit);
     } catch (e) {
       if (e is Failure) return Left(e);
@@ -195,10 +189,8 @@ class PlaylistRepositoryImpl implements PlaylistRepository {
       await database.isar.writeTxn(() async {
         await database.isar.playlists.put(playlist);
       });
-
-      // Sync data from Xtream in background
-      unawaited(_syncXtreamData(playlist));
-
+      
+      await _syncXtreamData(playlist);
       return const Right(unit);
     } catch (e) {
       if (e is Failure) return Left(e);
@@ -477,12 +469,7 @@ class PlaylistRepositoryImpl implements PlaylistRepository {
         ..type = db.PlaylistType.m3uFile
         ..info = (db.PlaylistInfo()..filePath = filePath);
 
-      // Save initial metadata
-      await database.isar.writeTxn(() async {
-        await database.isar.playlists.put(playlist);
-      });
-
-      unawaited(_syncM3uData(playlist, content));
+      await _syncM3uData(playlist, content);
       return const Right(unit);
     } catch (e) {
       return Left(DatabaseFailure(e.toString()));

@@ -178,6 +178,27 @@ class AppDatabase {
         .findAll();
   }
 
+  Future<List<AppStream>> getFavoritesByPlaylist(int pId) {
+    return isar.appStreams.filter().playlistIdEqualTo(pId).isFavoriteEqualTo(true).findAll();
+  }
+
+  Future<List<HistoryRecord>> getHistoryByPlaylist(int pId) {
+    return isar.historyRecords.where().findAll().then((list) {
+      final filtered = list.where((h) => h.playlistId == pId).toList();
+      filtered.sort((a, b) => b.lastWatched.compareTo(a.lastWatched));
+      return filtered;
+    });
+  }
+
+  Future<List<String>> getCategoryNames(int pId, StreamType type) {
+    return isar.appStreams
+        .filter()
+        .playlistIdEqualTo(pId)
+        .streamTypeEqualTo(type)
+        .categoryNameProperty()
+        .findAll();
+  }
+
   Future<void> toggleFavorite(int streamId) async {
     final stream = await isar.appStreams.get(streamId);
     if (stream != null) {

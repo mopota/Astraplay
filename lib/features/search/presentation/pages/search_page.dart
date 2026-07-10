@@ -58,8 +58,8 @@ class _SearchPageState extends State<SearchPage> {
 
   void _onSearchChanged(String query) {
     if (_debounce?.isActive ?? false) _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 500), () {
-      unawaited(_performSearch(query));
+    _debounce = Timer(const Duration(milliseconds: 300), () {
+      if (mounted) unawaited(_performSearch(query));
     });
   }
 
@@ -107,7 +107,7 @@ class _SearchPageState extends State<SearchPage> {
             onChanged: _onSearchChanged,
             elevation: WidgetStateProperty.all(0),
             backgroundColor: WidgetStateProperty.all(colorScheme.surfaceContainerHighest.withAlpha(120)),
-            leading: const Icon(Icons.search_rounded),
+            leading: const Icon(Icons.search_rounded, semanticLabel: 'Search'),
             shape: WidgetStateProperty.all(RoundedRectangleBorder(borderRadius: BorderRadius.circular(20))),
             trailing: [
               if (_controller.text.isNotEmpty)

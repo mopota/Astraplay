@@ -104,12 +104,25 @@ class SettingsPage extends StatelessWidget {
                   title: const Text('Clear Cache', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red)),
                   subtitle: const Text('Removes stored logos and metadata', style: TextStyle(fontSize: 12)),
                   onTap: () async {
-                    final dir = await getTemporaryDirectory();
-                    if (dir.existsSync()) {
-                      dir.deleteSync(recursive: true);
+                    try {
+                      final tempDir = await getTemporaryDirectory();
+                      if (tempDir.existsSync()) {
+                        final files = tempDir.listSync();
+                        for (var file in files) {
+                          try {
+                            file.deleteSync(recursive: true);
+                          } catch (_) {}
+                        }
+                      }
                       if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(content: Text('Cache cleared successfully')),
+                        );
+                      }
+                    } catch (e) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('Error clearing cache: $e')),
                         );
                       }
                     }

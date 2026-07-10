@@ -5,7 +5,6 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:isar_community/isar.dart';
 import '../../../../features/playlist/domain/entities/playlist.entity.dart';
 import '../../../../injection_container.dart';
 import '../../../../core/database/app_database.dart';
@@ -65,25 +64,19 @@ class _HomePageState extends State<HomePage> {
 
     final activePlaylist = await db.isar.playlists.get(activePlaylistId);
     
-    // 1. Fetch Favorites and History Records in parallel
-    // We fetch history without playlist filter to avoid the missing method error
+    // 1. Fetch Favorites and History Records using helpers
     final results = await Future.wait([
-      db.isar.appStreams.filter()
-          .playlistIdEqualTo(activePlaylistId)
-          .isFavoriteEqualTo(true)
-          .limit(20)
-          .findAll(),
-      db.isar.historyRecords
-          .where()
-          .sortByLastWatchedDesc()
-          .limit(100) // Fetch more to find enough for this playlist
-          .findAll(),
+      db.getFavoritesByPlaylist(activePlaylistId),
+      db.getHistoryByPlaylist(activePlaylistId),
     ]);
 
-    final favorites = results[0] as List<AppStream>;
-    final historyRecords = results[1] as List<HistoryRecord>;
+    final allFavorites = results[0] as List<AppStream>;
+    final allHistoryRecords = results[1] as List<HistoryRecord>;
     
-    // 2. Batch fetch streams and filter by playlistId in memory
+    final favorites = allFavorites.take(20).toList();
+    final historyRecords = allHistoryRecords.take(20).toList();
+    
+    // 2. Batch fetch streams for history items
     _historyStreams.clear();
     final List<HistoryRecord> filteredHistory = [];
     
@@ -92,14 +85,10 @@ class _HomePageState extends State<HomePage> {
       final streams = await db.isar.appStreams.getAll(streamIds);
       
       for (var i = 0; i < historyRecords.length; i++) {
-        final h = historyRecords[i];
         final s = streams[i];
-        
-        // Check if stream exists and belongs to active playlist
-        if (s != null && s.playlistId == activePlaylistId) {
-          _historyStreams[h.streamId] = s;
-          filteredHistory.add(h);
-          if (filteredHistory.length >= 20) break; // Limit to 20 items
+        if (s != null) {
+          _historyStreams[historyRecords[i].streamId] = s;
+          filteredHistory.add(historyRecords[i]);
         }
       }
     }

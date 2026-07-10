@@ -6,7 +6,6 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../domain/entities/playlist.entity.dart';
 import '../bloc/playlist_bloc.dart';
 import '../../../settings/presentation/cubit/settings_cubit.dart';
-import '../../../../injection_container.dart';
 import 'dart:async';
 
 class PlaylistPage extends StatelessWidget {
