@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../../core/database/app_database.dart';
 import '../../../../injection_container.dart';
+import '../../domain/repositories/stream_repository.dart';
 
 class MovieDetailsPage extends StatefulWidget {
   final AppStream stream;
@@ -31,9 +32,19 @@ class _MovieDetailsPageState extends State<MovieDetailsPage> {
   }
 
   Future<void> _toggleFavorite() async {
-    final db = sl<AppDatabase>();
-    await db.toggleFavorite(widget.stream.id);
-    setState(() => _isFavorite = !_isFavorite);
+    final result = await sl<StreamRepository>().toggleFavorite(widget.stream);
+    result.fold(
+      (l) => null,
+      (updatedStream) {
+        if (mounted) {
+          setState(() {
+            _isFavorite = updatedStream.isFavorite;
+            widget.stream.id = updatedStream.id;
+            widget.stream.isFavorite = updatedStream.isFavorite;
+          });
+        }
+      },
+    );
   }
 
   @override
@@ -230,6 +241,7 @@ class _MovieDetailsPageState extends State<MovieDetailsPage> {
       'streamUrl': widget.stream.data.streamUrl,
       'title': widget.stream.name,
       'streamId': widget.stream.id,
+      'stream': widget.stream,
       'headers': widget.stream.data.headersJson != null 
           ? Map<String, String>.from(jsonDecode(widget.stream.data.headersJson!)) 
           : null,

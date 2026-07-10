@@ -17,6 +17,25 @@ class PlaylistBloc extends Bloc<PlaylistEvent, PlaylistState> {
     on<RefreshPlaylistEvent>(_onRefreshPlaylist);
     on<AddDirectStreamEvent>(_onAddDirectStream);
     on<AddM3uFilePlaylistEvent>(_onAddM3uFilePlaylist);
+    on<UpdatePlaylistEvent>(_onUpdatePlaylist);
+  }
+
+  Future<void> _onUpdatePlaylist(UpdatePlaylistEvent event, Emitter<PlaylistState> emit) async {
+    emit(state.copyWith(isLoading: true, error: null));
+    final result = await repository.updatePlaylist(
+      id: event.id,
+      name: event.name,
+      url: event.url,
+      username: event.username,
+      password: event.password,
+    );
+    result.fold(
+      (failure) => emit(state.copyWith(isLoading: false, error: failure.message)),
+      (_) {
+        emit(state.copyWith(isLoading: false));
+        add(GetPlaylistsEvent());
+      },
+    );
   }
 
   Future<void> _onGetPlaylists(GetPlaylistsEvent event, Emitter<PlaylistState> emit) async {

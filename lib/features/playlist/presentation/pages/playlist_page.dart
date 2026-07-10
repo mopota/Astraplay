@@ -1,15 +1,33 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
-import 'package:intl/intl.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../domain/entities/playlist.entity.dart';
 import '../bloc/playlist_bloc.dart';
 import '../../../settings/presentation/cubit/settings_cubit.dart';
 import 'dart:async';
 
-class PlaylistPage extends StatelessWidget {
+class PlaylistPage extends StatefulWidget {
   const PlaylistPage({super.key});
+
+  @override
+  State<PlaylistPage> createState() => _PlaylistPageState();
+}
+
+class _PlaylistPageState extends State<PlaylistPage> with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -28,15 +46,16 @@ class PlaylistPage extends StatelessWidget {
             );
           }
         },
-        child: CustomScrollView(
-          physics: const BouncingScrollPhysics(),
-          slivers: [
+        child: NestedScrollView(
+          headerSliverBuilder: (context, innerBoxIsScrolled) => [
             SliverAppBar.large(
               title: Text(
                 'Select Source',
                 style: GoogleFonts.poppins(fontWeight: FontWeight.w800),
               ),
               centerTitle: false,
+              pinned: true,
+              floating: true,
               actions: [
                 Padding(
                   padding: const EdgeInsets.only(right: 8.0),
@@ -46,50 +65,26 @@ class PlaylistPage extends StatelessWidget {
                   ),
                 ),
               ],
-              bottom: PreferredSize(
-                preferredSize: const Size.fromHeight(4),
-                child: BlocBuilder<PlaylistBloc, PlaylistState>(
-                  builder: (context, state) {
-                    if (state.isLoading && state.playlists.isNotEmpty) {
-                      return const LinearProgressIndicator(minHeight: 4);
-                    }
-                    return const SizedBox(height: 4);
-                  },
-                ),
+              bottom: TabBar(
+                controller: _tabController,
+                indicatorWeight: 4,
+                indicatorSize: TabBarIndicatorSize.label,
+                labelStyle: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 14),
+                unselectedLabelStyle: GoogleFonts.poppins(fontWeight: FontWeight.w500, fontSize: 14),
+                tabs: const [
+                  Tab(text: 'Playlists'),
+                  Tab(text: 'Direct Streams'),
+                ],
               ),
             ),
-            BlocBuilder<PlaylistBloc, PlaylistState>(
-              builder: (context, state) {
-                if (state.isLoading && state.playlists.isEmpty) {
-                  return const SliverFillRemaining(
-                    child: Center(child: CircularProgressIndicator()),
-                  );
-                }
-
-                if (state.playlists.isEmpty) {
-                  return SliverFillRemaining(
-                    child: _buildEmptyState(context),
-                  );
-                }
-
-                return SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
-                  sliver: SliverList(
-                    delegate: SliverChildBuilderDelegate(
-                      (context, index) {
-                        final playlist = state.playlists[index];
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 12),
-                          child: _PlaylistCard(playlist: playlist),
-                        );
-                      },
-                      childCount: state.playlists.length,
-                    ),
-                  ),
-                );
-              },
-            ),
           ],
+          body: TabBarView(
+            controller: _tabController,
+            children: [
+              _buildPlaylistList(context, isDirect: false),
+              _buildPlaylistList(context, isDirect: true),
+            ],
+          ),
         ),
       ),
       floatingActionButton: FloatingActionButton.extended(
@@ -100,20 +95,51 @@ class PlaylistPage extends StatelessWidget {
     );
   }
 
-  Widget _buildEmptyState(BuildContext context) {
+  Widget _buildPlaylistList(BuildContext context, {required bool isDirect}) {
+    return BlocBuilder<PlaylistBloc, PlaylistState>(
+      builder: (context, state) {
+        if (state.isLoading && state.playlists.isEmpty) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        final filteredPlaylists = state.playlists.where((p) {
+          final isPDirect = p.type == 'directStream';
+          return isDirect ? isPDirect : !isPDirect;
+        }).toList();
+
+        if (filteredPlaylists.isEmpty) {
+          return _buildEmptyState(context, isDirect: isDirect);
+        }
+
+        return ListView.builder(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+          itemCount: filteredPlaylists.length,
+          itemBuilder: (context, index) {
+            final playlist = filteredPlaylists[index];
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: _PlaylistCard(playlist: playlist),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildEmptyState(BuildContext context, {required bool isDirect}) {
     final colorScheme = Theme.of(context).colorScheme;
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(
-            Icons.auto_awesome_motion_rounded,
+            isDirect ? Icons.bolt_rounded : Icons.auto_awesome_motion_rounded,
             size: 80,
             color: colorScheme.primary.withAlpha(50),
           ),
           const SizedBox(height: 24),
           Text(
-            'No sources added yet',
+            isDirect ? 'No direct streams' : 'No playlists added',
             style: GoogleFonts.poppins(
               fontSize: 20,
               fontWeight: FontWeight.w700,
@@ -121,14 +147,14 @@ class PlaylistPage extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'Add a playlist or direct link to start',
+            isDirect ? 'Add a direct link to watch instantly' : 'Add an M3U or Xtream source',
             style: TextStyle(color: colorScheme.onSurfaceVariant),
           ),
           const SizedBox(height: 32),
           FilledButton.icon(
             onPressed: () => context.push('/add-source'),
             icon: const Icon(Icons.add_rounded),
-            label: const Text('GET STARTED'),
+            label: const Text('ADD NOW'),
           ),
         ],
       ),
@@ -150,80 +176,45 @@ class _PlaylistCard extends StatelessWidget {
 
     Color brandColor;
     IconData icon;
-    String typeLabel;
 
     if (isXtream) {
       brandColor = Colors.blue;
       icon = Icons.cloud_queue_rounded;
-      typeLabel = 'XTREAM';
     } else if (isDirect) {
-      brandColor = Colors.redAccent;
+      brandColor = Colors.teal;
       icon = Icons.bolt_rounded;
-      typeLabel = 'DIRECT';
     } else {
       brandColor = Colors.orange;
       icon = Icons.format_list_bulleted_rounded;
-      typeLabel = 'M3U';
     }
 
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: () => _handleSelect(context),
-        borderRadius: BorderRadius.circular(28),
+        borderRadius: BorderRadius.circular(24),
         child: Container(
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(28),
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                brandColor.withAlpha(isDirect ? 30 : 20),
-                colorScheme.surface,
-              ],
-            ),
+            borderRadius: BorderRadius.circular(24),
+            color: colorScheme.surfaceContainerLow,
             border: Border.all(
-              color: brandColor.withAlpha(50),
-              width: 1.5,
+              color: brandColor.withAlpha(40),
+              width: 1,
             ),
           ),
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.all(16),
           child: Row(
             children: [
-              // Icon with badge
-              Stack(
-                children: [
-                  Container(
-                    width: 60,
-                    height: 60,
-                    decoration: BoxDecoration(
-                      color: brandColor.withAlpha(40),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Icon(icon, color: brandColor, size: 30),
-                  ),
-                  Positioned(
-                    right: -2,
-                    top: -2,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: brandColor,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        typeLabel,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 8,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
+              Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  color: brandColor.withAlpha(30),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Icon(icon, color: brandColor, size: 28),
               ),
-              const SizedBox(width: 20),
+              const SizedBox(width: 16),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -231,18 +222,18 @@ class _PlaylistCard extends StatelessWidget {
                     Text(
                       playlist.name,
                       style: GoogleFonts.poppins(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 2),
                     if (isDirect)
                       Text(
                         playlist.url ?? '',
                         style: TextStyle(
-                          fontSize: 12,
+                          fontSize: 11,
                           color: colorScheme.onSurfaceVariant.withAlpha(150),
                         ),
                         maxLines: 1,
@@ -258,25 +249,17 @@ class _PlaylistCard extends StatelessWidget {
                           _buildStatBadge(context, '${playlist.seriesCount}', Icons.video_library_rounded, brandColor),
                         ],
                       ),
-                    if (playlist.lastRefresh != null) ...[
-                      const SizedBox(height: 8),
-                      Text(
-                        'Last sync: ${DateFormat.yMMMd().add_jm().format(playlist.lastRefresh!)}',
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: colorScheme.onSurfaceVariant.withAlpha(100),
-                        ),
-                      ),
-                    ],
                   ],
                 ),
               ),
-              IconButton(
-                onPressed: () => _showMenu(context),
-                icon: const Icon(Icons.more_vert_rounded),
-                style: IconButton.styleFrom(
-                  backgroundColor: brandColor.withAlpha(20),
-                ),
+              Column(
+                children: [
+                  IconButton(
+                    onPressed: () => _showMenu(context),
+                    icon: const Icon(Icons.more_vert_rounded, size: 20),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ],
               ),
             ],
           ),
@@ -286,32 +269,24 @@ class _PlaylistCard extends StatelessWidget {
   }
 
   Widget _buildStatBadge(BuildContext context, String count, IconData icon, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: color.withAlpha(20),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 10, color: color),
-          const SizedBox(width: 4),
-          Text(
-            count,
-            style: TextStyle(
-              fontSize: 10,
-              fontWeight: FontWeight.bold,
-              color: color.withAlpha(200),
-            ),
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 10, color: color.withAlpha(180)),
+        const SizedBox(width: 4),
+        Text(
+          count,
+          style: TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.w600,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
   Future<void> _handleSelect(BuildContext context) async {
-    // Set active playlist
     await context.read<SettingsCubit>().setActivePlaylist(playlist.id);
     
     if (!context.mounted) return;
@@ -330,50 +305,114 @@ class _PlaylistCard extends StatelessWidget {
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
       builder: (context) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.outlineVariant,
-                  borderRadius: BorderRadius.circular(2),
-                ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 8),
+            Container(
+              width: 32,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.outlineVariant,
+                borderRadius: BorderRadius.circular(2),
               ),
-              const SizedBox(height: 24),
-              Text(
+            ),
+            Padding(
+              padding: const EdgeInsets.all(24),
+              child: Text(
                 playlist.name,
-                style: GoogleFonts.poppins(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
-                ),
+                style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.bold),
+                textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 24),
+            ),
+            ListTile(
+              leading: const Icon(Icons.edit_outlined),
+              title: const Text('Edit Details'),
+              onTap: () {
+                Navigator.pop(context);
+                _showEditDialog(context);
+              },
+            ),
+            if (playlist.type != 'directStream')
               ListTile(
                 leading: const Icon(Icons.refresh_rounded),
-                title: const Text('Refresh Content'),
+                title: const Text('Sync Content'),
                 onTap: () {
                   Navigator.pop(context);
                   context.read<PlaylistBloc>().add(RefreshPlaylistEvent(id: playlist.id));
                 },
               ),
-              ListTile(
-                leading: const Icon(Icons.delete_outline_rounded, color: Colors.red),
-                title: const Text('Remove Source', style: TextStyle(color: Colors.red)),
-                onTap: () {
-                  Navigator.pop(context);
-                  _showDeleteDialog(context);
-                },
+            ListTile(
+              leading: const Icon(Icons.delete_outline_rounded, color: Colors.red),
+              title: const Text('Delete Source', style: TextStyle(color: Colors.red)),
+              onTap: () {
+                Navigator.pop(context);
+                _showDeleteDialog(context);
+              },
+            ),
+            const SizedBox(height: 16),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showEditDialog(BuildContext context) {
+    final nameController = TextEditingController(text: playlist.name);
+    final urlController = TextEditingController(text: playlist.url);
+    final userController = TextEditingController(text: playlist.username);
+    final passController = TextEditingController(text: playlist.password);
+    final isXtream = playlist.type == 'xtream';
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Edit Source'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameController,
+                decoration: const InputDecoration(labelText: 'Name'),
               ),
+              if (playlist.type != 'm3uFile')
+                TextField(
+                  controller: urlController,
+                  decoration: InputDecoration(labelText: isXtream ? 'Server URL' : 'URL'),
+                ),
+              if (isXtream) ...[
+                TextField(
+                  controller: userController,
+                  decoration: const InputDecoration(labelText: 'Username'),
+                ),
+                TextField(
+                  controller: passController,
+                  decoration: const InputDecoration(labelText: 'Password'),
+                ),
+              ],
             ],
           ),
         ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () {
+              context.read<PlaylistBloc>().add(UpdatePlaylistEvent(
+                id: playlist.id,
+                name: nameController.text,
+                url: urlController.text.isNotEmpty ? urlController.text : null,
+                username: userController.text.isNotEmpty ? userController.text : null,
+                password: passController.text.isNotEmpty ? passController.text : null,
+              ));
+              Navigator.pop(dialogContext);
+            },
+            child: const Text('Save Changes'),
+          ),
+        ],
       ),
     );
   }
@@ -385,21 +424,20 @@ class _PlaylistCard extends StatelessWidget {
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Remove Source?'),
-        content: Text('This will remove "${playlist.name}" and all its contents from your library.'),
+        title: const Text('Delete?'),
+        content: Text('Remove "${playlist.name}"?'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Keep it')),
+          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error),
             onPressed: () async {
-              // If we are deleting the active playlist, unset it
               if (settingsCubit.state.settings.activePlaylistId == playlist.id) {
                 await settingsCubit.setActivePlaylist(null);
               }
               bloc.add(DeletePlaylistEvent(id: playlist.id));
               if (dialogContext.mounted) Navigator.pop(dialogContext);
             },
-            child: const Text('Yes, remove'),
+            child: const Text('Delete'),
           ),
         ],
       ),

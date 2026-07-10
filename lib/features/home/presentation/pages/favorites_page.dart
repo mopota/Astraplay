@@ -226,7 +226,7 @@ class _FavoriteCard extends StatelessWidget {
           );
 
           if (confirmed == true) {
-            await sl<StreamRepository>().toggleFavorite(stream.id);
+            await sl<StreamRepository>().toggleFavorite(stream);
             onRefresh();
           }
         },

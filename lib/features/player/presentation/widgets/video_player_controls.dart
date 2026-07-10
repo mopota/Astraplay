@@ -1,9 +1,17 @@
 import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../../core/database/app_database.dart';
+import '../../../../core/utils/haptics_helper.dart';
+import '../../../../core/localization/app_localizations.dart';
+import '../../../../injection_container.dart';
+import '../../../subtitles/presentation/cubit/subtitle_cubit.dart';
+import '../../../subtitles/presentation/widgets/subtitle_downloader_sheet.dart';
+import '../../../subtitles/presentation/widgets/subtitle_settings_sheet.dart';
 import 'native_video_player.dart';
+import 'channel_side_menu.dart';
 
 class VideoPlayerControls extends StatefulWidget {
   final NativePlayerController controller;
@@ -11,6 +19,9 @@ class VideoPlayerControls extends StatefulWidget {
   final VoidCallback onBack;
   final VoidCallback? onNext;
   final VoidCallback? onPrevious;
+  final List<AppStream>? categoryStreams;
+  final AppStream? currentStream;
+  final Function(AppStream)? onStreamSelected;
 
   const VideoPlayerControls({
     super.key,
@@ -19,6 +30,9 @@ class VideoPlayerControls extends StatefulWidget {
     required this.onBack,
     this.onNext,
     this.onPrevious,
+    this.categoryStreams,
+    this.currentStream,
+    this.onStreamSelected,
   });
 
   @override
@@ -29,6 +43,7 @@ class _VideoPlayerControlsState extends State<VideoPlayerControls> {
   bool _isVisible = true;
   Timer? _hideTimer;
   bool _isLocked = false;
+  bool _isSideMenuOpen = false;
   
   double _brightness = 0.5;
   double _volume = 0.5;
@@ -41,11 +56,15 @@ class _VideoPlayerControlsState extends State<VideoPlayerControls> {
   Duration? _dragStartPosition;
   Duration? _seekingPosition;
 
+  EpgProgram? _currentProgram;
+  Timer? _epgTimer;
+
   @override
   void initState() {
     super.initState();
     _startHideTimer();
     _loadInitialValues();
+    _startEpgTimer();
   }
 
   Future<void> _loadInitialValues() async {
@@ -54,17 +73,37 @@ class _VideoPlayerControlsState extends State<VideoPlayerControls> {
     if (mounted) setState(() {});
   }
 
+  void _startEpgTimer() {
+    _updateEpg();
+    _epgTimer = Timer.periodic(const Duration(minutes: 1), (_) => _updateEpg());
+  }
+
+  Future<void> _updateEpg() async {
+    if (widget.currentStream != null) {
+      final db = sl<AppDatabase>();
+      final streamId = widget.currentStream!.data.xtreamId ?? widget.currentStream!.id.toString();
+      final program = await db.getCurrentProgram(widget.currentStream!.playlistId, streamId);
+      if (mounted) setState(() => _currentProgram = program);
+    }
+  }
+
   void _startHideTimer() {
     _hideTimer?.cancel();
     if (!_isVisible) return;
     _hideTimer = Timer(const Duration(seconds: 4), () {
-      if (mounted && widget.controller.isPlaying && !_isDragging && !_isLocked) {
+      if (mounted && widget.controller.isPlaying && !_isDragging && !_isLocked && !_isSideMenuOpen) {
         setState(() => _isVisible = false);
       }
     });
   }
 
   void _toggleControls() {
+    if (_isSideMenuOpen) {
+      setState(() => _isSideMenuOpen = false);
+      _startHideTimer();
+      return;
+    }
+
     if (_isLocked && !_isVisible) {
        setState(() => _isVisible = true);
        _startHideTimer();
@@ -79,6 +118,7 @@ class _VideoPlayerControlsState extends State<VideoPlayerControls> {
   @override
   void dispose() {
     _hideTimer?.cancel();
+    _epgTimer?.cancel();
     super.dispose();
   }
 
@@ -99,110 +139,119 @@ class _VideoPlayerControlsState extends State<VideoPlayerControls> {
       builder: (context, child) {
         if (widget.controller.isInPiP) return const SizedBox.shrink();
 
-        return GestureDetector(
-          onTap: _toggleControls,
-          behavior: HitTestBehavior.opaque,
-          
-          // Vertical Drag: Brightness (Left) / Volume (Right)
-          onVerticalDragUpdate: _isLocked ? null : (details) {
-            final double delta = details.primaryDelta! / MediaQuery.of(context).size.height;
-            final double width = MediaQuery.of(context).size.width;
-            
-            setState(() {
-              _isDragging = true;
-              if (details.globalPosition.dx < width / 2) {
-                _gestureType = 'Brightness';
-                _brightness = (_brightness - delta).clamp(0.0, 1.0);
-                widget.controller.setBrightness(_brightness);
-                _gestureValue = _brightness;
-              } else {
-                _gestureType = 'Volume';
-                _volume = (_volume - delta).clamp(0.0, 1.0);
-                widget.controller.setVolume(_volume);
-                _gestureValue = _volume;
-              }
-            });
-          },
-          onVerticalDragEnd: (_) {
-            setState(() {
-              _gestureType = null;
-              _isDragging = false;
-            });
-            _startHideTimer();
-          },
-
-          // Horizontal Drag: Seeking
-          onHorizontalDragStart: _isLocked ? null : (details) {
-            setState(() {
-              _isDragging = true;
-              _dragStartX = details.globalPosition.dx;
-              _dragStartPosition = widget.controller.position;
-              _seekingPosition = widget.controller.position;
-              _gestureType = 'Seek';
-            });
-          },
-          onHorizontalDragUpdate: _isLocked ? null : (details) {
-            if (_dragStartX == null || _dragStartPosition == null) return;
-            
-            final double width = MediaQuery.of(context).size.width;
-            final double deltaX = details.globalPosition.dx - _dragStartX!;
-            final double relativeDelta = deltaX / width;
-            
-            // Map 1 full width drag to 2 minutes of video seek (or total duration if smaller)
-            final int seekDeltaMs = (relativeDelta * 120000).toInt(); 
-            
-            setState(() {
-              final newMs = (_dragStartPosition!.inMilliseconds + seekDeltaMs)
-                  .clamp(0, widget.controller.duration.inMilliseconds);
-              _seekingPosition = Duration(milliseconds: newMs);
-              _gestureValue = newMs / widget.controller.duration.inMilliseconds.toDouble();
-            });
-          },
-          onHorizontalDragEnd: _isLocked ? null : (_) {
-            if (_seekingPosition != null) {
-              widget.controller.seekTo(_seekingPosition!);
-            }
-            setState(() {
-              _gestureType = null;
-              _isDragging = false;
-              _seekingPosition = null;
-              _dragStartX = null;
-            });
-            _startHideTimer();
-          },
-
-          onDoubleTapDown: (details) {
-             if (_isLocked) return;
-             final double width = MediaQuery.of(context).size.width;
-             if (details.globalPosition.dx < width / 2) {
-               widget.controller.seekTo(widget.controller.position - const Duration(seconds: 10));
-               HapticFeedback.lightImpact();
-             } else {
-               widget.controller.seekTo(widget.controller.position + const Duration(seconds: 10));
-               HapticFeedback.lightImpact();
-             }
-          },
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              // Gesture Feedback
-              if (_gestureType != null)
-                _buildGestureIndicator(),
-
-              // Controls Overlay
-              IgnorePointer(
-                ignoring: !_isVisible,
-                child: AnimatedOpacity(
-                  opacity: _isVisible ? 1.0 : 0.0,
-                  duration: const Duration(milliseconds: 350),
-                  curve: Curves.easeInOutCubic,
-                  child: _buildControlsBackground(
-                    child: _isLocked ? _buildLockedUI() : _buildFullUI(),
+        return Stack(
+          children: [
+            GestureDetector(
+              onTap: _toggleControls,
+              behavior: HitTestBehavior.opaque,
+              onVerticalDragUpdate: _isLocked ? null : (details) {
+                final double delta = details.primaryDelta! / MediaQuery.of(context).size.height;
+                final double width = MediaQuery.of(context).size.width;
+                
+                setState(() {
+                  _isDragging = true;
+                  if (details.globalPosition.dx < width / 2) {
+                    _gestureType = 'Brightness';
+                    _brightness = (_brightness - delta).clamp(0.0, 1.0);
+                    widget.controller.setBrightness(_brightness);
+                    _gestureValue = _brightness;
+                  } else {
+                    _gestureType = 'Volume';
+                    _volume = (_volume - delta).clamp(0.0, 1.0);
+                    widget.controller.setVolume(_volume);
+                    _gestureValue = _volume;
+                  }
+                });
+              },
+              onVerticalDragEnd: (_) {
+                setState(() {
+                  _gestureType = null;
+                  _isDragging = false;
+                });
+                _startHideTimer();
+              },
+              onHorizontalDragStart: _isLocked ? null : (details) {
+                setState(() {
+                  _isDragging = true;
+                  _dragStartX = details.globalPosition.dx;
+                  _dragStartPosition = widget.controller.position;
+                  _seekingPosition = widget.controller.position;
+                  _gestureType = 'Seek';
+                });
+              },
+              onHorizontalDragUpdate: _isLocked ? null : (details) {
+                if (_dragStartX == null || _dragStartPosition == null) return;
+                
+                final double width = MediaQuery.of(context).size.width;
+                final double deltaX = details.globalPosition.dx - _dragStartX!;
+                final double relativeDelta = deltaX / width;
+                final int seekDeltaMs = (relativeDelta * 120000).toInt(); 
+                
+                setState(() {
+                  final newMs = (_dragStartPosition!.inMilliseconds + seekDeltaMs)
+                      .clamp(0, widget.controller.duration.inMilliseconds);
+                  _seekingPosition = Duration(milliseconds: newMs);
+                  _gestureValue = newMs / (widget.controller.duration.inMilliseconds.toDouble().clamp(1.0, double.infinity));
+                });
+              },
+              onHorizontalDragEnd: _isLocked ? null : (_) {
+                if (_seekingPosition != null) {
+                  widget.controller.seekTo(_seekingPosition!);
+                }
+                setState(() {
+                  _gestureType = null;
+                  _isDragging = false;
+                  _seekingPosition = null;
+                  _dragStartX = null;
+                });
+                _startHideTimer();
+              },
+              onDoubleTapDown: (details) {
+                 if (_isLocked) return;
+                 final double width = MediaQuery.of(context).size.width;
+                 if (details.globalPosition.dx < width / 2) {
+                   widget.controller.seekTo(widget.controller.position - const Duration(seconds: 10));
+                   HapticsHelper.light();
+                 } else {
+                   widget.controller.seekTo(widget.controller.position + const Duration(seconds: 10));
+                   HapticsHelper.light();
+                 }
+              },
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  if (_gestureType != null)
+                    _buildGestureIndicator(),
+                  IgnorePointer(
+                    ignoring: !_isVisible,
+                    child: AnimatedOpacity(
+                      opacity: _isVisible ? 1.0 : 0.0,
+                      duration: const Duration(milliseconds: 350),
+                      curve: Curves.easeInOutCubic,
+                      child: _buildControlsBackground(
+                        child: _isLocked ? _buildLockedUI() : _buildFullUI(),
+                      ),
+                    ),
                   ),
-                ),
+                ],
               ),
-            ],
-          ),
+            ),
+            if (_isSideMenuOpen && widget.categoryStreams != null && widget.currentStream != null)
+              Positioned(
+                right: 0,
+                top: 0,
+                bottom: 0,
+                child: ChannelSideMenu(
+                  streams: widget.categoryStreams!,
+                  currentStream: widget.currentStream!,
+                  onStreamSelected: (s) {
+                    widget.onStreamSelected?.call(s);
+                    setState(() => _isSideMenuOpen = false);
+                  },
+                  onClose: () => setState(() => _isSideMenuOpen = false),
+                ).animate().slideX(begin: 1, end: 0, duration: 300.ms, curve: Curves.easeOutCubic),
+              ),
+          ],
         );
       },
     );
@@ -215,10 +264,10 @@ class _VideoPlayerControlsState extends State<VideoPlayerControls> {
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           colors: [
-            Colors.black.withValues(alpha: 0.5),
+            Colors.black.withAlpha(150),
             Colors.transparent,
             Colors.transparent,
-            Colors.black.withValues(alpha: 0.5),
+            Colors.black.withAlpha(150),
           ],
           stops: const [0.0, 0.2, 0.8, 1.0],
         ),
@@ -249,7 +298,7 @@ class _VideoPlayerControlsState extends State<VideoPlayerControls> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
         decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.6),
+          color: Colors.black.withAlpha(180),
           borderRadius: BorderRadius.circular(24),
           border: Border.all(color: Colors.white10),
         ),
@@ -293,7 +342,7 @@ class _VideoPlayerControlsState extends State<VideoPlayerControls> {
           child: Center(
             child: IconButton.filled(
               onPressed: () {
-                HapticFeedback.heavyImpact();
+                HapticsHelper.heavy();
                 setState(() => _isLocked = false);
                 _startHideTimer();
               },
@@ -342,17 +391,33 @@ class _VideoPlayerControlsState extends State<VideoPlayerControls> {
           ),
           const SizedBox(width: 16),
           Expanded(
-            child: Text(
-              widget.title,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-                letterSpacing: -0.2,
-                shadows: [Shadow(blurRadius: 8, color: Colors.black45)],
-              ),
-              overflow: TextOverflow.ellipsis,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  widget.title,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: -0.2,
+                    shadows: [Shadow(blurRadius: 8, color: Colors.black45)],
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+                _buildEpgInfo(),
+              ],
             ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.cast_rounded, color: Colors.white),
+            onPressed: () {
+              HapticsHelper.light();
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Casting feature coming soon')),
+              );
+            },
           ),
           IconButton(
             icon: const Icon(Icons.picture_in_picture_alt_rounded, color: Colors.white),
@@ -367,6 +432,22 @@ class _VideoPlayerControlsState extends State<VideoPlayerControls> {
     );
   }
 
+  Widget _buildEpgInfo() {
+    if (_currentProgram == null) {
+      return Text(
+        context.tr('epg_no_program'),
+        style: const TextStyle(color: Colors.white54, fontSize: 10),
+      );
+    }
+
+    return Text(
+      'Now: ${_currentProgram!.title}',
+      style: TextStyle(color: Theme.of(context).colorScheme.primary, fontSize: 11, fontWeight: FontWeight.bold),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+    );
+  }
+
   Widget _buildCenterControls() {
     final isPlaying = widget.controller.isPlaying;
     final isBuffering = widget.controller.playbackState == 'BUFFERING';
@@ -377,7 +458,7 @@ class _VideoPlayerControlsState extends State<VideoPlayerControls> {
         if (widget.onPrevious != null) ...[
           _buildEpisodeButton(
             icon: Icons.skip_previous_rounded,
-            label: 'الحلقة السابقة',
+            label: context.tr('prev_episode'),
             onTap: widget.onPrevious!,
           ),
           const SizedBox(width: 24),
@@ -401,7 +482,7 @@ class _VideoPlayerControlsState extends State<VideoPlayerControls> {
               shape: BoxShape.circle,
               boxShadow: [
                 BoxShadow(
-                  color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
+                  color: Theme.of(context).colorScheme.primary.withAlpha(80),
                   blurRadius: 30,
                   spreadRadius: 5,
                 )
@@ -409,7 +490,7 @@ class _VideoPlayerControlsState extends State<VideoPlayerControls> {
             ),
             child: IconButton.filled(
               onPressed: () {
-                HapticFeedback.mediumImpact();
+                HapticsHelper.medium();
                 if (isPlaying) {
                   widget.controller.pause();
                 } else {
@@ -417,9 +498,9 @@ class _VideoPlayerControlsState extends State<VideoPlayerControls> {
                 }
                 _startHideTimer();
               },
-              icon: Icon(isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded, size: 25),
+              icon: Icon(isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded, size: 32),
               style: IconButton.styleFrom(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.all(16),
                 backgroundColor: Theme.of(context).colorScheme.primary,
                 foregroundColor: Theme.of(context).colorScheme.onPrimary,
               ),
@@ -438,7 +519,7 @@ class _VideoPlayerControlsState extends State<VideoPlayerControls> {
           const SizedBox(width: 24),
           _buildEpisodeButton(
             icon: Icons.skip_next_rounded,
-            label: 'الحلقة القادمة',
+            label: context.tr('next_episode'),
             onTap: widget.onNext!,
           ),
         ],
@@ -456,12 +537,12 @@ class _VideoPlayerControlsState extends State<VideoPlayerControls> {
       children: [
         IconButton(
           onPressed: () {
-            HapticFeedback.mediumImpact();
+            HapticsHelper.medium();
             onTap();
           },
           icon: Icon(icon, size: 32, color: Colors.white),
           style: IconButton.styleFrom(
-            backgroundColor: Colors.white.withValues(alpha: 0.1),
+            backgroundColor: Colors.white10,
             padding: const EdgeInsets.all(12),
           ),
         ),
@@ -482,12 +563,12 @@ class _VideoPlayerControlsState extends State<VideoPlayerControls> {
   Widget _buildSkipButton(IconData icon, VoidCallback onTap) {
     return IconButton(
       onPressed: () {
-        HapticFeedback.selectionClick();
+        HapticsHelper.light();
         onTap();
       },
       icon: Icon(icon, size: 38, color: Colors.white),
       style: IconButton.styleFrom(
-        backgroundColor: Colors.white.withValues(alpha: 0.1),
+        backgroundColor: Colors.white10,
       ),
     );
   }
@@ -501,7 +582,7 @@ class _VideoPlayerControlsState extends State<VideoPlayerControls> {
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.5),
+        color: Colors.black.withAlpha(150),
         borderRadius: BorderRadius.circular(24),
         border: Border.all(color: Colors.white10),
       ),
@@ -529,15 +610,24 @@ class _VideoPlayerControlsState extends State<VideoPlayerControls> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
+                if (widget.categoryStreams != null)
+                  _buildBottomAction(Icons.list_rounded, 'Channels', () {
+                    HapticsHelper.light();
+                    setState(() {
+                      _isSideMenuOpen = true;
+                      _isVisible = false;
+                    });
+                  }),
                 _buildBottomAction(Icons.audiotrack_rounded, 'Audio', () => _showTrackSheet('Audio')),
-                _buildBottomAction(Icons.subtitles_rounded, 'Subs', () => _showTrackSheet('Subtitles')),
+                _buildBottomAction(Icons.subtitles_rounded, 'Subs', _showSubtitleMenu),
                 _buildBottomAction(Icons.speed_rounded, 'Speed', _showSpeedSheet),
                 _buildBottomAction(Icons.aspect_ratio_rounded, 'Resize', _toggleAspectRatio),
-                _buildBottomAction(Icons.screen_rotation_rounded, 'Resize', () {
+                _buildBottomAction(Icons.screen_rotation_rounded, 'Rotate', () {
+                  HapticsHelper.light();
                   setState(() => widget.controller.toggleOrientation());
                 }),
                 _buildBottomAction(Icons.lock_outline_rounded, 'Lock', () {
-                  HapticFeedback.heavyImpact();
+                  HapticsHelper.heavy();
                   setState(() {
                      _isLocked = true;
                      _isVisible = true;
@@ -575,23 +665,20 @@ class _VideoPlayerControlsState extends State<VideoPlayerControls> {
     final double currentPos = widget.controller.position.inMilliseconds.toDouble().clamp(0.0, max);
     final double buffered = widget.controller.bufferedPosition.inMilliseconds.toDouble().clamp(0.0, max);
     
-    // Use local seeking value if dragging to keep it smooth
     final double value = _isDragging && _seekingPosition != null 
         ? _seekingPosition!.inMilliseconds.toDouble().clamp(0.0, max)
         : currentPos;
 
     return Container(
-      height: 40, // Height to ensure enough touch area
+      height: 40,
       alignment: Alignment.center,
       child: Stack(
         alignment: Alignment.center,
         children: [
-          // Buffered progress - Adjusted padding to match Slider track exactly
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24), // Matches Slider default padding
+            padding: const EdgeInsets.symmetric(horizontal: 24),
             child: Stack(
               children: [
-                // Background Track
                 Container(
                   height: 4,
                   width: double.infinity,
@@ -600,7 +687,6 @@ class _VideoPlayerControlsState extends State<VideoPlayerControls> {
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
-                // Buffered Indicator
                 FractionallySizedBox(
                   alignment: Alignment.centerLeft,
                   widthFactor: (buffered / max).clamp(0.0, 1.0),
@@ -621,10 +707,9 @@ class _VideoPlayerControlsState extends State<VideoPlayerControls> {
               thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7, pressedElevation: 4),
               overlayShape: const RoundSliderOverlayShape(overlayRadius: 16),
               activeTrackColor: Theme.of(context).colorScheme.primary,
-              inactiveTrackColor: Colors.transparent, // Important: let our custom track show
+              inactiveTrackColor: Colors.transparent,
               thumbColor: Colors.white,
-              overlayColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.2),
-              // Remove horizontal padding of the track to match the background exactly
+              overlayColor: Theme.of(context).colorScheme.primary.withAlpha(50),
               trackShape: const RoundedRectSliderTrackShape(), 
             ),
             child: Slider(
@@ -640,7 +725,6 @@ class _VideoPlayerControlsState extends State<VideoPlayerControls> {
               final target = Duration(milliseconds: val.toInt());
               widget.controller.seekTo(target);
               
-              // We can reduce this delay since the controller now has its own "seek lock"
               Future.delayed(const Duration(milliseconds: 300), () {
                 if (mounted) {
                   setState(() {
@@ -675,10 +759,59 @@ class _VideoPlayerControlsState extends State<VideoPlayerControls> {
       children: speeds.map((s) => ListTile(
         title: Text('${s}x', textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.bold)),
         onTap: () {
+          HapticsHelper.light();
           widget.controller.setPlaybackSpeed(s);
           Navigator.pop(context);
         },
       )).toList(),
+    );
+  }
+
+  void _showSubtitleMenu() {
+    _showM3Sheet(
+      title: 'Subtitles',
+      children: [
+        _buildSheetItem(Icons.download_rounded, 'Download Subtitles', 'Online', _showSubtitleDownloader),
+        _buildSheetItem(Icons.settings_suggest_rounded, 'Subtitle Settings', 'Sync & Style', _showSubtitleSettings),
+        const Divider(indent: 16, endIndent: 16, color: Colors.white10),
+        ListTile(
+          leading: const Icon(Icons.list_rounded),
+          title: const Text('Embedded Subtitles'),
+          onTap: () {
+            Navigator.pop(context);
+            _showTrackSheet('Subtitles');
+          },
+        ),
+      ],
+    );
+  }
+
+  void _showSubtitleDownloader() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => BlocProvider(
+        create: (context) => sl<SubtitleCubit>(),
+        child: SubtitleDownloaderSheet(
+          initialQuery: widget.title,
+          onSubtitleSelected: (path) {
+            widget.controller.setSubtitleSource(path);
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Subtitle applied successfully')),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  void _showSubtitleSettings() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => SubtitleSettingsSheet(controller: widget.controller),
     );
   }
 
@@ -694,6 +827,7 @@ class _VideoPlayerControlsState extends State<VideoPlayerControls> {
         ListTile(
           title: const Text('Auto / Default'),
           onTap: () {
+            HapticsHelper.light();
             widget.controller.selectTrack(trackType, -1, -1);
             Navigator.pop(context);
           },
@@ -704,6 +838,7 @@ class _VideoPlayerControlsState extends State<VideoPlayerControls> {
             title: Text(track['label']?.isEmpty ? (track['language'] ?? 'Unknown Track') : track['label']),
             trailing: isSelected ? Icon(Icons.check_circle_rounded, color: Theme.of(context).colorScheme.primary) : null,
             onTap: () {
+              HapticsHelper.light();
               widget.controller.selectTrack(trackType, track['groupIndex'], track['trackIndex']);
               Navigator.pop(context);
             },
@@ -751,6 +886,7 @@ class _VideoPlayerControlsState extends State<VideoPlayerControls> {
         ],
       ),
       onTap: () {
+        HapticsHelper.light();
         Navigator.pop(context);
         onTap();
       },
@@ -759,6 +895,7 @@ class _VideoPlayerControlsState extends State<VideoPlayerControls> {
 
   int _aspectRatioMode = 0;
   void _toggleAspectRatio() {
+    HapticsHelper.light();
     setState(() => _aspectRatioMode = (_aspectRatioMode + 1) % 5);
     widget.controller.setResizeMode(_aspectRatioMode);
     final modes = ['Fit', 'Fill', 'Zoom', 'Fixed Height', 'Fixed Width'];

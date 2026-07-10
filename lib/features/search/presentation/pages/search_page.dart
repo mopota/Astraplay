@@ -4,12 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:isar_community/isar.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:isar_community/isar.dart';
 import '../../../../injection_container.dart';
 import '../../../../core/database/app_database.dart';
 import '../../../settings/presentation/cubit/settings_cubit.dart';
 import '../../domain/repositories/search_repository.dart';
+import '../../../../core/presentation/widgets/app_shimmer.dart';
 
 class SearchPage extends StatefulWidget {
   const SearchPage({super.key});
@@ -33,10 +34,14 @@ class _SearchPageState extends State<SearchPage> {
 
   Future<void> _loadHistory() async {
     final db = sl<AppDatabase>();
-    final history = await db.isar.searchHistorys.where().sortByTimestampDesc().limit(10).findAll();
+    final history = await db.isar.searchHistorys.where().findAll();
+    
+    // Sort in memory to avoid Isar QueryBuilder complexity in Release builds
+    history.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+
     if (mounted) {
       setState(() {
-        _history = history.map((h) => h.query).toList();
+        _history = history.take(10).map((h) => h.query).toList();
       });
     }
   }
@@ -115,7 +120,7 @@ class _SearchPageState extends State<SearchPage> {
                   icon: const Icon(Icons.clear_rounded),
                   onPressed: () {
                     _controller.clear();
-                    _performSearch('');
+                    unawaited(_performSearch(''));
                   },
                 ),
             ],
@@ -129,7 +134,33 @@ class _SearchPageState extends State<SearchPage> {
   Widget _buildLocalResults() {
     final colorScheme = Theme.of(context).colorScheme;
     
-    if (_isLoading) return const SizedBox.shrink();
+    if (_isLoading) {
+      return AppShimmer(
+        child: ListView.builder(
+          padding: const EdgeInsets.all(20),
+          itemCount: 8,
+          itemBuilder: (context, index) => Padding(
+            padding: const EdgeInsets.only(bottom: 16),
+            child: Row(
+              children: [
+                const ShimmerPlaceholder(width: 70, height: 70, borderRadius: 16),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const ShimmerPlaceholder(width: double.infinity, height: 16),
+                      const SizedBox(height: 8),
+                      const ShimmerPlaceholder(width: 150, height: 12),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
     
     if (_localResults.isEmpty) {
       return Padding(
@@ -146,7 +177,7 @@ class _SearchPageState extends State<SearchPage> {
                   TextButton(
                     onPressed: () async {
                       final db = sl<AppDatabase>();
-                      await db.isar.writeTxn(() => db.isar.searchHistorys.clear());
+                      await db.isar.searchHistorys.clear();
                       _loadHistory();
                     },
                     child: const Text('Clear All'),
@@ -304,7 +335,7 @@ class _SearchPageState extends State<SearchPage> {
                   m3uEpisodes = allStreams.where((s) => getBaseName(s.name) == targetBaseName).toList();
                 }
 
-                _saveToHistory(_controller.text);
+                unawaited(_saveToHistory(_controller.text));
                 if (context.mounted) {
                   unawaited(context.push('/series-details', extra: {
                     'stream': stream,
@@ -312,19 +343,20 @@ class _SearchPageState extends State<SearchPage> {
                   }));
                 }
               } else if (stream.streamType == StreamType.movie) {
-                _saveToHistory(_controller.text);
+                unawaited(_saveToHistory(_controller.text));
                 if (context.mounted) {
                   unawaited(context.push('/movie-details', extra: {
                     'stream': stream,
                   }));
                 }
               } else {
-                _saveToHistory(_controller.text);
+                unawaited(_saveToHistory(_controller.text));
                 if (context.mounted) {
                   unawaited(context.push('/player', extra: {
                     'streamUrl': stream.data.streamUrl,
                     'title': stream.name,
                     'streamId': stream.id,
+                    'stream': stream,
                     'headers': stream.data.headersJson != null
                         ? Map<String, String>.from(jsonDecode(stream.data.headersJson!))
                         : null,

@@ -5,15 +5,16 @@ abstract class PlaylistRemoteDataSource {
   Future<List<dynamic>> getXtreamData(String url, String username, String password, String action);
   Future<String> fetchM3uContent(String url);
   Future<Map<String, dynamic>> loginXtream(String url, String username, String password);
+  Future<Map<String, dynamic>> getXtreamEpg(String url, String username, String password, String streamId);
 }
 
 class PlaylistRemoteDataSourceImpl implements PlaylistRemoteDataSource {
   final Dio dio;
 
   PlaylistRemoteDataSourceImpl({required this.dio}) {
-    dio.options.connectTimeout = const Duration(seconds: 10);
-    dio.options.receiveTimeout = const Duration(seconds: 15);
-    dio.options.sendTimeout = const Duration(seconds: 10);
+    dio.options.connectTimeout = const Duration(seconds: 30);
+    dio.options.receiveTimeout = const Duration(seconds: 120);
+    dio.options.sendTimeout = const Duration(seconds: 30);
   }
 
   String _handleError(dynamic e) {
@@ -84,6 +85,26 @@ class PlaylistRemoteDataSourceImpl implements PlaylistRemoteDataSource {
       }
     } catch (e) {
       if (e is ServerFailure) rethrow;
+      throw ServerFailure(_handleError(e));
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> getXtreamEpg(String url, String username, String password, String streamId) async {
+    try {
+      final response = await dio.get('$url/player_api.php', queryParameters: {
+        'username': username,
+        'password': password,
+        'action': 'get_short_epg',
+        'stream_id': streamId,
+      });
+      if (response.statusCode == 200) {
+        if (response.data is Map<String, dynamic>) {
+          return response.data;
+        }
+      }
+      return {};
+    } catch (e) {
       throw ServerFailure(_handleError(e));
     }
   }

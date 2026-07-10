@@ -24,7 +24,7 @@ class _XtreamLoginPageState extends State<XtreamLoginPage> {
     return BlocListener<PlaylistBloc, PlaylistState>(
       listener: (context, state) {
         if (state.operationSuccess) {
-          context.pop();
+          context.go('/playlists');
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Xtream source added successfully')),
           );

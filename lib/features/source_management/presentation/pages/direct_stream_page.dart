@@ -13,107 +13,155 @@ class DirectStreamPage extends StatefulWidget {
 class _DirectStreamPageState extends State<DirectStreamPage> {
   final _urlController = TextEditingController();
   final _nameController = TextEditingController();
-  bool _isLoading = false;
+
+  String _normalizeUrl(String url) {
+    String trimmed = url.trim();
+    if (trimmed.isEmpty) return '';
+    if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) {
+      return 'http://$trimmed';
+    }
+    return trimmed;
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Add Direct Stream')),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Enter Stream Details',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 24),
-            TextField(
-              controller: _nameController,
-              decoration: InputDecoration(
-                labelText: 'Stream Name',
-                hintText: 'e.g., My Favorite Channel',
-                prefixIcon: const Icon(Icons.label_outline_rounded),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+    return BlocListener<PlaylistBloc, PlaylistState>(
+      listener: (context, state) {
+        if (state.operationSuccess) {
+          final url = _normalizeUrl(_urlController.text);
+          final name = _nameController.text.trim();
+          
+          // Clear any errors or loading states
+          context.go('/playlists'); 
+          
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Stream added successfully')),
+          );
+          
+          // Small delay to ensure the router has settled
+          Future.delayed(const Duration(milliseconds: 100), () {
+            if (context.mounted) {
+              context.push('/player', extra: {
+                'streamUrl': url,
+                'title': name,
+              });
+            }
+          });
+        }
+        if (state.error != null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error: ${state.error}')),
+          );
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(title: const Text('Direct Stream')),
+        body: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Watch Single Link',
+                style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
               ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _urlController,
-              decoration: InputDecoration(
-                labelText: 'Stream URL',
-                hintText: 'http://.../stream.m3u8',
-                prefixIcon: const Icon(Icons.link_rounded),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+              const SizedBox(height: 8),
+              const Text(
+                'Enter a direct stream URL to play it immediately and save it for later.',
+                style: TextStyle(color: Colors.grey),
               ),
-            ),
-            const SizedBox(height: 32),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                onPressed: _isLoading ? null : _saveStream,
-                style: FilledButton.styleFrom(
-                  padding: const EdgeInsets.all(16),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              const SizedBox(height: 32),
+              TextField(
+                controller: _nameController,
+                decoration: InputDecoration(
+                  labelText: 'Friendly Name',
+                  hintText: 'e.g., Sports Channel',
+                  prefixIcon: const Icon(Icons.label_important_outline_rounded),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(20)),
                 ),
-                child: _isLoading 
-                  ? const CircularProgressIndicator(color: Colors.white)
-                  : const Text('Save & Watch'),
               ),
-            ),
-            const SizedBox(height: 24),
-            _buildSupportedFormats(),
-          ],
+              const SizedBox(height: 20),
+              TextField(
+                controller: _urlController,
+                decoration: InputDecoration(
+                  labelText: 'Stream URL',
+                  hintText: 'http://.../playlist.m3u8',
+                  prefixIcon: const Icon(Icons.link_rounded),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(20)),
+                ),
+              ),
+              const SizedBox(height: 40),
+              BlocBuilder<PlaylistBloc, PlaylistState>(
+                builder: (context, state) {
+                  return SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      onPressed: state.isLoading ? null : _saveAndPlay,
+                      style: FilledButton.styleFrom(
+                        padding: const EdgeInsets.all(20),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                      ),
+                      child: state.isLoading 
+                        ? const SizedBox(
+                            height: 20, 
+                            width: 20, 
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)
+                          )
+                        : const Text('SAVE & WATCH NOW', style: TextStyle(fontWeight: FontWeight.bold)),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 32),
+              _buildSupportedFormats(),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  void _saveStream() async {
-    if (_nameController.text.isEmpty || _urlController.text.isEmpty) {
+  void _saveAndPlay() {
+    final name = _nameController.text.trim();
+    final url = _urlController.text.trim();
+
+    if (name.isEmpty || url.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please fill all fields')),
+        const SnackBar(content: Text('Please enter name and URL')),
       );
       return;
     }
 
-    setState(() => _isLoading = true);
-    
-    // Add to playlist
     context.read<PlaylistBloc>().add(AddDirectStreamEvent(
-      name: _nameController.text,
-      url: _urlController.text,
+      name: name,
+      url: _normalizeUrl(url),
     ));
-
-    // Wait for a bit for the operation to complete (or listen to state)
-    // For simplicity, we just push to player after a small delay or success signal
-    // In a real app, listen to Bloc listener
-    
-    await Future.delayed(const Duration(milliseconds: 500));
-    
-    if (mounted) {
-      context.pushReplacement('/player', extra: {
-        'streamUrl': _urlController.text,
-        'title': _nameController.text,
-      });
-    }
   }
 
   Widget _buildSupportedFormats() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text('Supported Formats', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-        const SizedBox(height: 12),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            '.m3u8', '.mpd', '.ts', '.mp4', '.mkv', '.avi', '.mov', '.flv', '.webm', '.mp3'
-          ].map((e) => Chip(label: Text(e, style: const TextStyle(fontSize: 11)))).toList(),
-        ),
-      ],
+    return Opacity(
+      opacity: 0.6,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Formats Support:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              'HLS (.m3u8)', 'DASH (.mpd)', 'MP4', 'MKV', 'TS', 'MOV'
+            ].map((e) => Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey.withAlpha(100)),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(e, style: const TextStyle(fontSize: 10)),
+            )).toList(),
+          ),
+        ],
+      ),
     );
   }
 }

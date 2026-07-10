@@ -17,6 +17,25 @@ enum StreamType {
 }
 
 @Collection()
+class StreamCategory {
+  Id id = Isar.autoIncrement;
+
+  @Index()
+  int playlistId = 0;
+
+  @Index()
+  late String name;
+
+  @Index()
+  late String categoryId; // ID from provider (Xtream)
+
+  @Enumerated(EnumType.name)
+  late StreamType streamType;
+
+  int count = 0;
+}
+
+@Collection()
 class Playlist {
   Id id = Isar.autoIncrement;
 
@@ -63,6 +82,9 @@ class AppStream {
 
   @Index()
   bool isFavorite = false;
+
+  @Index()
+  int? favoriteFolderId;
 }
 
 @Embedded()
@@ -72,6 +94,38 @@ class StreamData {
   String? xtreamId;
   String? metadata; // JSON metadata
   String? headersJson; // Headers as JSON string
+}
+
+@Collection()
+class FavoriteFolder {
+  Id id = Isar.autoIncrement;
+
+  @Index(unique: true)
+  late String name;
+
+  late String iconName;
+}
+
+@Collection()
+class EpgProgram {
+  Id id = Isar.autoIncrement;
+
+  @Index()
+  late String channelId;
+
+  @Index()
+  late String title;
+
+  String? description;
+
+  @Index()
+  late DateTime startTime;
+
+  @Index()
+  late DateTime endTime;
+
+  @Index()
+  int playlistId = 0;
 }
 
 @Collection()
@@ -100,11 +154,12 @@ class AppSettings {
   int? activePlaylistId;
   String themeMode = 'system';
   bool useNativePlayer = true;
-  String language = 'en';
+  String language = 'ar'; // Default to Arabic as requested
   bool hardwareAcceleration = true;
   int bufferMs = 5000;
   String? pinCode;
   bool biometricsEnabled = false;
+  bool autoRefreshPlaylists = false;
 }
 
 @Collection()
@@ -131,9 +186,12 @@ class AppDatabase {
       [
         PlaylistSchema,
         AppStreamSchema,
+        StreamCategorySchema,
         HistoryRecordSchema,
         AppSettingsSchema,
         SearchHistorySchema,
+        FavoriteFolderSchema,
+        EpgProgramSchema,
       ],
       directory: dir.path,
       inspector: false,
@@ -165,6 +223,14 @@ class AppDatabase {
 
       await isar.playlists.delete(id);
       await isar.appStreams.filter().playlistIdEqualTo(id).deleteAll();
+      await isar.streamCategorys.filter().playlistIdEqualTo(id).deleteAll();
+      await isar.epgPrograms.filter().playlistIdEqualTo(id).deleteAll();
+    });
+  }
+
+  Future<void> saveEpgPrograms(List<EpgProgram> programs) async {
+    await isar.writeTxn(() async {
+      await isar.epgPrograms.putAll(programs);
     });
   }
 
@@ -183,11 +249,11 @@ class AppDatabase {
   }
 
   Future<List<HistoryRecord>> getHistoryByPlaylist(int pId) {
-    return isar.historyRecords.where().findAll().then((list) {
-      final filtered = list.where((h) => h.playlistId == pId).toList();
-      filtered.sort((a, b) => b.lastWatched.compareTo(a.lastWatched));
-      return filtered;
-    });
+    return isar.historyRecords
+        .filter()
+        .playlistIdEqualTo(pId)
+        .sortByLastWatchedDesc()
+        .findAll();
   }
 
   Future<List<String>> getCategoryNames(int pId, StreamType type) {
@@ -199,22 +265,53 @@ class AppDatabase {
         .findAll();
   }
 
-  Future<void> toggleFavorite(int streamId) async {
-    final stream = await isar.appStreams.get(streamId);
-    if (stream != null) {
-      stream.isFavorite = !stream.isFavorite;
-      await isar.writeTxn(() => isar.appStreams.put(stream));
+  Future<AppStream> _ensureStreamInDb(AppStream stream) async {
+    if (stream.id != 0) {
+      final existing = await isar.appStreams.get(stream.id);
+      if (existing != null) return existing;
     }
+    
+    // If not found by ID, try finding by xtreamId if applicable
+    if (stream.data.xtreamId != null) {
+      final existing = await isar.appStreams.filter()
+          .playlistIdEqualTo(stream.playlistId)
+          .data((q) => q.xtreamIdEqualTo(stream.data.xtreamId))
+          .findFirst();
+      if (existing != null) return existing;
+    } else {
+      // Try by name and category (for M3U if somehow not found by ID)
+      final existing = await isar.appStreams.filter()
+          .playlistIdEqualTo(stream.playlistId)
+          .nameEqualTo(stream.name)
+          .categoryNameEqualTo(stream.categoryName)
+          .findFirst();
+      if (existing != null) return existing;
+    }
+
+    // Save it if not found
+    final id = await isar.appStreams.put(stream);
+    stream.id = id;
+    return stream;
+  }
+
+  Future<AppStream> toggleFavorite(AppStream stream) async {
+    return await isar.writeTxn(() async {
+      final dbStream = await _ensureStreamInDb(stream);
+      dbStream.isFavorite = !dbStream.isFavorite;
+      await isar.appStreams.put(dbStream);
+      return dbStream;
+    });
   }
 
   Future<List<AppStream>> getFavorites() {
     return isar.appStreams.filter().isFavoriteEqualTo(true).findAll();
   }
 
-  Future<void> addToHistory(int streamId, {int position = 0, int duration = 0, String? episodeMetadata}) async {
+  Future<void> addToHistory(AppStream stream, {int position = 0, int duration = 0, String? episodeMetadata}) async {
     await isar.writeTxn(() async {
-      final stream = await isar.appStreams.get(streamId);
-      final pId = stream?.playlistId ?? 0;
+      final dbStream = await _ensureStreamInDb(stream);
+      final streamId = dbStream.id;
+      final pId = dbStream.playlistId;
       
       final query = isar.historyRecords.filter().streamIdEqualTo(streamId);
       final existing = episodeMetadata != null 
@@ -246,5 +343,17 @@ class AppDatabase {
         ? await query.episodeMetadataEqualTo(episodeMetadata).findFirst()
         : await query.findFirst();
     return record?.lastPosition ?? 0;
+  }
+
+  // EPG methods
+  Future<EpgProgram?> getCurrentProgram(int pId, String channelId) async {
+    final now = DateTime.now();
+    return await isar.epgPrograms
+        .filter()
+        .playlistIdEqualTo(pId)
+        .channelIdEqualTo(channelId)
+        .startTimeLessThan(now)
+        .endTimeGreaterThan(now)
+        .findFirst();
   }
 }

@@ -6,6 +6,14 @@ abstract class PlaylistRepository {
   Future<Either<Failure, List<PlaylistEntity>>> getPlaylists();
   Future<Either<Failure, Unit>> deletePlaylist(int id);
   Future<Either<Failure, Unit>> refreshPlaylist(int id);
+  Future<Either<Failure, Unit>> updatePlaylist({
+    required int id,
+    required String name,
+    String? url,
+    String? username,
+    String? password,
+  });
+  Future<Either<Failure, Unit>> fetchEpg(int playlistId, String streamId);
 
   // Direct Stream
   Future<Either<Failure, Unit>> addDirectStream(String name, String url);

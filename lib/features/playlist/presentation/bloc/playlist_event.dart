@@ -73,3 +73,23 @@ class AddM3uFilePlaylistEvent extends PlaylistEvent {
   @override
   List<Object> get props => [name, filePath];
 }
+
+class UpdatePlaylistEvent extends PlaylistEvent {
+  final int id;
+  final String name;
+  final String? url;
+  final String? username;
+  final String? password;
+
+  const UpdatePlaylistEvent({
+    required this.id,
+    required this.name,
+    this.url,
+    this.username,
+    this.password,
+  });
+
+  @override
+  List<Object> get props => [id, name, url ?? '', username ?? '', password ?? ''];
+}
+

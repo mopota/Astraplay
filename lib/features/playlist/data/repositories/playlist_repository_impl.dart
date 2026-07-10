@@ -97,6 +97,8 @@ class PlaylistRepositoryImpl implements PlaylistRepository {
         name: p.name,
         type: p.type.name,
         url: p.info.url ?? p.info.serverUrl,
+        username: p.info.username,
+        password: p.info.password,
         lastRefresh: p.lastRefresh,
         channelCount: p.info.channelCount,
         movieCount: p.info.movieCount,
@@ -203,143 +205,65 @@ class PlaylistRepositoryImpl implements PlaylistRepository {
     final user = playlist.info.username!;
     final pass = playlist.info.password!;
 
-    // Helper to fetch data safely without failing the whole sync
-    Future<List<dynamic>> safeFetch(String action) async {
-      try {
-        return await remoteDataSource.getXtreamData(url, user, pass, action);
-      } catch (e) {
-        debugPrint('Xtream sync warning ($action): $e');
-        return [];
-      }
-    }
+    try {
+      // 1. Fetch Categories and Stream Lists to get counts
+      final results = await Future.wait([
+        remoteDataSource.getXtreamData(url, user, pass, 'get_live_categories'),
+        remoteDataSource.getXtreamData(url, user, pass, 'get_vod_categories'),
+        remoteDataSource.getXtreamData(url, user, pass, 'get_series_categories'),
+        remoteDataSource.getXtreamData(url, user, pass, 'get_live_streams'),
+        remoteDataSource.getXtreamData(url, user, pass, 'get_vod_streams'),
+        remoteDataSource.getXtreamData(url, user, pass, 'get_series'),
+      ]);
 
-    // Fetch categories and streams for all types in parallel
-    final results = await Future.wait([
-      safeFetch('get_live_categories'),
-      safeFetch('get_live_streams'),
-      safeFetch('get_vod_categories'),
-      safeFetch('get_vod_streams'),
-      safeFetch('get_series_categories'),
-      safeFetch('get_series'),
-    ]);
+      final liveCats = results[0];
+      final movieCats = results[1];
+      final seriesCats = results[2];
+      final liveStreams = results[3];
+      final movieStreams = results[4];
+      final seriesList = results[5];
 
-    final liveCats = results[0];
-    final liveStreams = results[1];
-    final movieCats = results[2];
-    final movieStreams = results[3];
-    final seriesCats = results[4];
-    final seriesList = results[5];
-
-    final liveCatMap = <String, String>{};
-    for (var c in liveCats) {
-      liveCatMap[c['category_id'].toString()] = c['category_name'].toString();
-    }
-    
-    final movieCatMap = <String, String>{};
-    for (var c in movieCats) {
-      movieCatMap[c['category_id'].toString()] = c['category_name'].toString();
-    }
-    
-    final seriesCatMap = <String, String>{};
-    for (var c in seriesCats) {
-      seriesCatMap[c['category_id'].toString()] = c['category_name'].toString();
-    }
-
-    // Get existing streams to preserve favorites and IDs - Use property query to be efficient
-    final existingData = await database.isar.appStreams
-        .filter()
-        .playlistIdEqualTo(playlist.id)
-        .findAll();
-    
-    final Map<String, db.AppStream> xtreamIdMap = {};
-    final Map<String, db.AppStream> nameCatMap = {};
-
-    for (var s in existingData) {
-      if (s.data.xtreamId != null) {
-        xtreamIdMap[s.data.xtreamId!] = s;
-      }
-      nameCatMap['${s.name}_${s.categoryName}_${s.streamType.name}'] = s;
-    }
-
-    final List<db.AppStream> allStreams = [];
-    final Set<int> keptIds = {};
-
-    void processStream(db.AppStream s) {
-      db.AppStream? existing;
+      // 2. Prepare Categories with Counts (But DON'T save all streams yet)
+      final List<db.StreamCategory> allCategories = [];
       
-      // Try match by Xtream ID first
-      if (s.data.xtreamId != null) {
-        existing = xtreamIdMap[s.data.xtreamId!];
-      }
-      
-      // Fallback to Name + Category if URL/ID changed but content is same
-      existing ??= nameCatMap['${s.name}_${s.categoryName}_${s.streamType.name}'];
-
-      if (existing != null) {
-        s.id = existing.id;
-        s.isFavorite = existing.isFavorite;
-        keptIds.add(existing.id);
-      }
-      allStreams.add(s);
-    }
-
-    for (var s in liveStreams) {
-      processStream(db.AppStream()
-        ..playlistId = playlist.id
-        ..categoryName = liveCatMap[s['category_id'].toString()] ?? 'Uncategorized'
-        ..name = s['name']?.toString() ?? 'Unknown'
-        ..streamType = db.StreamType.live
-        ..data = (db.StreamData()
-          ..streamUrl = _fixUrl('$url/live/$user/$pass/${s['stream_id']}.ts')
-          ..logoUrl = s['stream_icon']?.toString()
-          ..xtreamId = s['stream_id']?.toString()));
-    }
-
-    for (var s in movieStreams) {
-      processStream(db.AppStream()
-        ..playlistId = playlist.id
-        ..categoryName = movieCatMap[s['category_id'].toString()] ?? 'Uncategorized'
-        ..name = s['name']?.toString() ?? 'Unknown'
-        ..streamType = db.StreamType.movie
-        ..data = (db.StreamData()
-          ..streamUrl = _fixUrl('$url/movie/$user/$pass/${s['stream_id']}.${s['container_extension'] ?? 'mp4'}')
-          ..logoUrl = s['stream_icon']?.toString()
-          ..xtreamId = s['stream_id']?.toString()
-          ..metadata = jsonEncode(s)));
-    }
-
-    for (var s in seriesList) {
-      processStream(db.AppStream()
-        ..playlistId = playlist.id
-        ..categoryName = seriesCatMap[s['category_id'].toString()] ?? 'Uncategorized'
-        ..name = s['name']?.toString() ?? 'Unknown'
-        ..streamType = db.StreamType.series
-        ..data = (db.StreamData()
-          ..streamUrl = ''
-          ..logoUrl = s['cover']?.toString()
-          ..xtreamId = s['series_id']?.toString()
-          ..metadata = jsonEncode(s)));
-    }
-
-    await database.isar.writeTxn(() async {
-      // Delete streams that no longer exist in the new sync
-      final idsToDelete = existingData
-          .map((e) => e.id)
-          .where((id) => !keptIds.contains(id))
-          .toList();
-      
-      if (idsToDelete.isNotEmpty) {
-        await database.isar.appStreams.deleteAll(idsToDelete);
+      void processCats(List<dynamic> cats, db.StreamType type, List<dynamic> streams) {
+        for (var c in cats) {
+          final cid = c['category_id']?.toString() ?? '0';
+          final count = streams.where((s) => s['category_id']?.toString() == cid).length;
+          
+          allCategories.add(db.StreamCategory()
+            ..playlistId = playlist.id
+            ..name = c['category_name']?.toString() ?? 'Unknown'
+            ..categoryId = cid
+            ..streamType = type
+            ..count = count);
+        }
       }
 
-      await database.isar.appStreams.putAll(allStreams);
-      
-      playlist.info.channelCount = liveStreams.length;
-      playlist.info.movieCount = movieStreams.length;
-      playlist.info.seriesCount = seriesList.length;
-      playlist.lastRefresh = DateTime.now();
-      await database.isar.playlists.put(playlist);
-    });
+      processCats(liveCats, db.StreamType.live, liveStreams);
+      processCats(movieCats, db.StreamType.movie, movieStreams);
+      processCats(seriesCats, db.StreamType.series, seriesList);
+
+      // 3. Save Metadata Only (This keeps the app size tiny)
+      await database.isar.writeTxn(() async {
+        // Clear old categories
+        await database.isar.streamCategorys.filter().playlistIdEqualTo(playlist.id).deleteAll();
+        // Clear cached streams for this playlist (to force refresh metadata if needed)
+        await database.isar.appStreams.filter().playlistIdEqualTo(playlist.id).deleteAll();
+        
+        await database.isar.streamCategorys.putAll(allCategories);
+        
+        playlist.info.channelCount = liveStreams.length;
+        playlist.info.movieCount = movieStreams.length;
+        playlist.info.seriesCount = seriesList.length;
+        playlist.lastRefresh = DateTime.now();
+        await database.isar.playlists.put(playlist);
+      });
+
+    } catch (e) {
+      debugPrint('Xtream metadata sync error: $e');
+      rethrow;
+    }
   }
 
   @override
@@ -363,6 +287,84 @@ class PlaylistRepositoryImpl implements PlaylistRepository {
     }
   }
 
+  @override
+  Future<Either<Failure, Unit>> updatePlaylist({
+    required int id,
+    required String name,
+    String? url,
+    String? username,
+    String? password,
+  }) async {
+    try {
+      final playlist = await database.isar.playlists.get(id);
+      if (playlist == null) return const Left(DatabaseFailure('Playlist not found'));
+
+      await database.isar.writeTxn(() async {
+        playlist.name = name;
+        if (url != null) {
+          if (playlist.type == db.PlaylistType.xtream) {
+            playlist.info.serverUrl = _fixUrl(url);
+          } else {
+            playlist.info.url = _fixUrl(url);
+          }
+        }
+        if (username != null) playlist.info.username = username;
+        if (password != null) playlist.info.password = password;
+        
+        await database.isar.playlists.put(playlist);
+      });
+
+      return const Right(unit);
+    } catch (e) {
+      return Left(DatabaseFailure(e.toString()));
+    }
+  }
+
+  @override
+  Future<Either<Failure, Unit>> fetchEpg(int playlistId, String streamId) async {
+    try {
+      final playlist = await database.isar.playlists.get(playlistId);
+      if (playlist == null || playlist.type != db.PlaylistType.xtream) {
+        return const Right(unit);
+      }
+
+      final data = await remoteDataSource.getXtreamEpg(
+        playlist.info.serverUrl!,
+        playlist.info.username!,
+        playlist.info.password!,
+        streamId,
+      );
+
+      final epgList = data['epg_listings'] as List?;
+      if (epgList != null) {
+        final List<db.EpgProgram> programs = [];
+        for (var item in epgList) {
+          try {
+            final start = DateTime.parse(item['start']);
+            final end = DateTime.parse(item['end']);
+            programs.add(db.EpgProgram()
+              ..channelId = streamId
+              ..playlistId = playlistId
+              ..title = utf8.decode(base64.decode(item['title']))
+              ..description = item['description'] != null 
+                  ? utf8.decode(base64.decode(item['description'])) 
+                  : null
+              ..startTime = start
+              ..endTime = end);
+          } catch (_) {}
+        }
+        
+        if (programs.isNotEmpty) {
+          await database.saveEpgPrograms(programs);
+        }
+      }
+
+      return const Right(unit);
+    } catch (e) {
+      return Left(ServerFailure(e.toString()));
+    }
+  }
+
   void _clearAllCaches() {
     try {
       sl<CategoryRepository>().clearCache();
@@ -380,20 +382,16 @@ class PlaylistRepositoryImpl implements PlaylistRepository {
       
       if (playlist.type == db.PlaylistType.m3uUrl) {
         if (playlist.info.username != null && playlist.info.password != null) {
-          unawaited(_syncXtreamData(playlist));
+          await _syncXtreamData(playlist);
         } else {
-          // Fetch and sync in background
-          remoteDataSource.fetchM3uContent(playlist.info.url!).then((content) {
-            unawaited(_syncM3uData(playlist, content));
-          }).catchError((e) {
-            debugPrint('Background refresh error: $e');
-          });
+          final content = await remoteDataSource.fetchM3uContent(playlist.info.url!);
+          await _syncM3uData(playlist, content);
         }
       } else if (playlist.type == db.PlaylistType.m3uFile) {
         final content = await File(playlist.info.filePath!).readAsString();
-        unawaited(_syncM3uData(playlist, content));
+        await _syncM3uData(playlist, content);
       } else if (playlist.type == db.PlaylistType.xtream) {
-        unawaited(_syncXtreamData(playlist));
+        await _syncXtreamData(playlist);
       }
       return const Right(unit);
     } catch (e) {

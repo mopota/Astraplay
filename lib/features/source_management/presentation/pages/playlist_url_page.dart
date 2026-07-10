@@ -19,7 +19,7 @@ class _PlaylistUrlPageState extends State<PlaylistUrlPage> {
     return BlocListener<PlaylistBloc, PlaylistState>(
       listener: (context, state) {
         if (state.operationSuccess) {
-          context.pop(); // Go back to sources list
+          context.go('/playlists');
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Playlist imported successfully')),
           );

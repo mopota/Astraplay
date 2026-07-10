@@ -13,6 +13,8 @@ import 'features/category/domain/repositories/stream_repository.dart';
 import 'features/category/data/repositories/stream_repository_impl.dart';
 import 'features/search/domain/repositories/search_repository.dart';
 import 'features/search/data/repositories/search_repository_impl.dart';
+import 'features/subtitles/domain/services/subtitle_service.dart';
+import 'features/subtitles/presentation/cubit/subtitle_cubit.dart';
 
 final sl = GetIt.instance;
 
@@ -22,6 +24,7 @@ Future<void> init() async {
   // Blocs
   sl.registerFactory(() => PlaylistBloc(repository: sl()));
   sl.registerLazySingleton(() => SettingsCubit(sl()));
+  sl.registerFactory(() => SubtitleCubit(sl()));
 
   // Repositories
   sl.registerLazySingleton<PlaylistRepository>(
@@ -35,11 +38,20 @@ Future<void> init() async {
     () => CategoryRepositoryImpl(database: sl()),
   );
   sl.registerLazySingleton<StreamRepository>(
-    () => StreamRepositoryImpl(database: sl()),
+    () => StreamRepositoryImpl(
+      database: sl(),
+      remoteDataSource: sl(),
+    ),
   );
   sl.registerLazySingleton<SearchRepository>(
-    () => SearchRepositoryImpl(database: sl()),
+    () => SearchRepositoryImpl(
+      database: sl(),
+      remoteDataSource: sl(),
+    ),
   );
+
+  // Services
+  sl.registerLazySingleton(() => SubtitleService());
 
   // Data sources
   sl.registerLazySingleton<PlaylistRemoteDataSource>(

@@ -8,6 +8,7 @@ import '../../domain/repositories/category_repository.dart';
 import 'package:dartz/dartz.dart' as dartz;
 import '../../../../core/errors/failures.dart';
 import '../../domain/repositories/category_repository.dart' as repo;
+import '../../../../core/presentation/widgets/app_shimmer.dart';
 
 class CategoryPage extends StatelessWidget {
   final PlaylistEntity playlist;
@@ -97,7 +98,24 @@ class _CategoryListState extends State<_CategoryList> {
       future: _categoriesFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const SizedBox.shrink();
+          return AppShimmer(
+            child: GridView.builder(
+              padding: const EdgeInsets.all(20),
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                childAspectRatio: 1.5,
+                crossAxisSpacing: 16,
+                mainAxisSpacing: 16,
+              ),
+              itemCount: 10,
+              itemBuilder: (context, index) => const ShimmerPlaceholder(
+                width: double.infinity,
+                height: double.infinity,
+                borderRadius: 24,
+              ),
+            ),
+          );
         }
         
         final result = snapshot.data;

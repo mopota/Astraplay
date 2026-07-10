@@ -9,6 +9,7 @@ import '../../../../core/database/app_database.dart';
 import '../../domain/repositories/stream_repository.dart';
 import 'package:dartz/dartz.dart' as dartz;
 import '../../../../core/errors/failures.dart';
+import '../../../../core/presentation/widgets/app_shimmer.dart';
 
 class StreamListPage extends StatefulWidget {
   final int playlistId;
@@ -30,12 +31,12 @@ class _StreamListPageState extends State<StreamListPage> {
   String _searchQuery = '';
   String _sortBy = 'name'; // 'name', 'newest'
   final TextEditingController _searchController = TextEditingController();
-  late Future<dartz.Either<Failure, List<AppStream>>> _streamsFuture;
+  late Stream<dartz.Either<Failure, List<AppStream>>> _streamsStream;
 
   @override
   void initState() {
     super.initState();
-    _streamsFuture = sl<StreamRepository>().getStreams(widget.playlistId, widget.category, widget.type);
+    _streamsStream = sl<StreamRepository>().getStreams(widget.playlistId, widget.category, widget.type);
   }
 
   @override
@@ -76,11 +77,31 @@ class _StreamListPageState extends State<StreamListPage> {
           ),
           SliverPadding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            sliver: FutureBuilder(
-              future: _streamsFuture,
+            sliver: StreamBuilder(
+              stream: _streamsStream,
               builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const SliverToBoxAdapter(child: SizedBox.shrink());
+                if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
+                  return SliverToBoxAdapter(
+                    child: AppShimmer(
+                      child: GridView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        padding: const EdgeInsets.all(20),
+                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: isLive ? 2 : 3,
+                          childAspectRatio: isLive ? 1.4 : 0.62,
+                          crossAxisSpacing: 14,
+                          mainAxisSpacing: 14,
+                        ),
+                        itemCount: 12,
+                        itemBuilder: (context, index) => const ShimmerPlaceholder(
+                          width: double.infinity,
+                          height: double.infinity,
+                          borderRadius: 24,
+                        ),
+                      ),
+                    ),
+                  );
                 }
                 final result = snapshot.data;
                 if (result == null) return const SliverToBoxAdapter(child: SizedBox());
@@ -249,6 +270,9 @@ class _StreamCardState extends State<_StreamCard> {
               'streamUrl': widget.stream.data.streamUrl,
               'title': widget.stream.name,
               'streamId': widget.stream.id,
+              'playlistId': widget.stream.playlistId,
+              'categoryName': widget.stream.categoryName,
+              'stream': widget.stream,
               'headers': widget.stream.data.headersJson != null
                   ? Map<String, String>.from(jsonDecode(widget.stream.data.headersJson!))
                   : null,
@@ -385,10 +409,19 @@ class _StreamCardState extends State<_StreamCard> {
   }
 
   void _toggleFavorite() async {
-    final result = await sl<StreamRepository>().toggleFavorite(widget.stream.id);
+    final result = await sl<StreamRepository>().toggleFavorite(widget.stream);
     result.fold(
       (l) => null,
-      (r) => setState(() => _isFavorite = !_isFavorite),
+      (updatedStream) {
+        if (mounted) {
+          setState(() {
+            _isFavorite = updatedStream.isFavorite;
+            // Update the widget's stream ID in case it was 0 and now has a DB ID
+            widget.stream.id = updatedStream.id;
+            widget.stream.isFavorite = updatedStream.isFavorite;
+          });
+        }
+      },
     );
   }
 }

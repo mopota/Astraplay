@@ -1,9 +1,13 @@
 import 'dart:io';
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
+import 'package:webview_flutter/webview_flutter.dart';
+import 'package:webview_flutter_android/webview_flutter_android.dart';
+import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
 
 class NativeVideoPlayer extends StatefulWidget {
   final String url;
@@ -25,9 +29,67 @@ class NativeVideoPlayer extends StatefulWidget {
 
 class _NativeVideoPlayerState extends State<NativeVideoPlayer> {
   NativePlayerController? _controller;
+  WebViewController? _webController;
+  bool _isWebMode = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _isWebMode = _checkIsWeb(widget.url);
+    if (_isWebMode) {
+      _initWebController();
+    }
+  }
+
+  bool _checkIsWeb(String url) {
+    final lowerUrl = url.toLowerCase();
+    return lowerUrl.contains('.html') || 
+           lowerUrl.contains('.php') || 
+           lowerUrl.contains('youtube.com') || 
+           lowerUrl.contains('youtu.be');
+  }
+
+  void _initWebController() {
+    late final PlatformWebViewControllerCreationParams params;
+    if (WebViewPlatform.instance is WebKitWebViewPlatform) {
+      params = WebKitWebViewControllerCreationParams(
+        allowsInlineMediaPlayback: true,
+        mediaTypesRequiringUserAction: const <PlaybackMediaTypes>{},
+      );
+    } else {
+      params = const PlatformWebViewControllerCreationParams();
+    }
+
+    _webController = WebViewController.fromPlatformCreationParams(params)
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setNavigationDelegate(
+        NavigationDelegate(
+          onPageFinished: (_) {
+             _controller?._onWebReady();
+          },
+        ),
+      )
+      ..loadRequest(Uri.parse(widget.url));
+
+    if (_webController!.platform is AndroidWebViewController) {
+      (_webController!.platform as AndroidWebViewController)
+          .setMediaPlaybackRequiresUserGesture(false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    if (_isWebMode) {
+      return Stack(
+        children: [
+          WebViewWidget(controller: _webController!),
+          // Overlay an invisible layer to capture gestures if needed, 
+          // but we'll let the existing VideoPlayerControls handle the UI.
+          _buildInternalCreatedNotifier(),
+        ],
+      );
+    }
+
     const String viewType = 'astraplay/native_player';
     final Map<String, dynamic> creationParams = {
       'url': widget.url,
@@ -72,6 +134,23 @@ class _NativeVideoPlayerState extends State<NativeVideoPlayer> {
     return const Center(child: Text('Platform not supported'));
   }
 
+  Widget _buildInternalCreatedNotifier() {
+    return FutureBuilder(
+      future: Future.microtask(() {}),
+      builder: (context, snapshot) {
+        if (_controller == null) {
+          _controller = NativePlayerController(-1, webController: _webController);
+          if (widget.onCreated != null) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              widget.onCreated!(_controller!);
+            });
+          }
+        }
+        return const SizedBox.shrink();
+      },
+    );
+  }
+
   void _onPlatformViewCreated(int id) {
     _controller = NativePlayerController(id);
     if (widget.onCreated != null) {
@@ -82,6 +161,7 @@ class _NativeVideoPlayerState extends State<NativeVideoPlayer> {
 
 class NativePlayerController extends ChangeNotifier {
   final int id;
+  final WebViewController? webController;
   late MethodChannel _channel;
 
   bool isPlaying = false;
@@ -95,15 +175,47 @@ class NativePlayerController extends ChangeNotifier {
   bool isInPiP = false;
 
   DateTime? _lastSeekTime;
+  Timer? _webProgressTimer;
 
-  NativePlayerController(this.id) {
-    _channel = MethodChannel('astraplay/native_player_$id');
-    _channel.setMethodCallHandler(_handleMethodCall);
+  NativePlayerController(this.id, {this.webController}) {
+    if (id != -1) {
+      _channel = MethodChannel('astraplay/native_player_$id');
+      _channel.setMethodCallHandler(_handleMethodCall);
+    }
+  }
+
+  void _onWebReady() {
+    isPlaying = true;
+    playbackState = 'READY';
+    _startWebPolling();
+    notifyListeners();
+  }
+
+  void _startWebPolling() {
+    _webProgressTimer?.cancel();
+    _webProgressTimer = Timer.periodic(const Duration(seconds: 1), (timer) async {
+      if (webController == null) return;
+      try {
+        final current = await webController!.runJavaScriptReturningResult(
+          "document.querySelector('video').currentTime"
+        );
+        final total = await webController!.runJavaScriptReturningResult(
+          "document.querySelector('video').duration"
+        );
+        
+        position = Duration(milliseconds: ((double.tryParse(current.toString()) ?? 0) * 1000).toInt());
+        duration = Duration(milliseconds: ((double.tryParse(total.toString()) ?? 0) * 1000).toInt());
+        notifyListeners();
+      } catch (_) {}
+    });
   }
 
   @override
   void dispose() {
-    _channel.setMethodCallHandler(null);
+    _webProgressTimer?.cancel();
+    if (id != -1) {
+      _channel.setMethodCallHandler(null);
+    }
     super.dispose();
   }
 
@@ -122,7 +234,6 @@ class NativePlayerController extends ChangeNotifier {
         notifyListeners();
         break;
       case 'onProgress':
-        // Ignore progress updates for 2 seconds after a seek to prevent jump-back
         if (_lastSeekTime != null && 
             DateTime.now().difference(_lastSeekTime!) < const Duration(seconds: 2)) {
           return;
@@ -151,66 +262,139 @@ class NativePlayerController extends ChangeNotifier {
   }
 
   Future<void> play(String url, {Map<String, String>? headers}) async {
-    await _channel.invokeMethod('play', {'url': url, 'headers': headers});
+    if (webController != null) {
+      await webController!.loadRequest(Uri.parse(url));
+    } else {
+      await _channel.invokeMethod('play', {'url': url, 'headers': headers});
+    }
   }
 
   Future<void> pause() async {
-    await _channel.invokeMethod('pause');
+    if (webController != null) {
+      await webController!.runJavaScript("document.querySelector('video').pause()");
+      isPlaying = false;
+      notifyListeners();
+    } else {
+      await _channel.invokeMethod('pause');
+    }
   }
 
   Future<void> resume() async {
-    await _channel.invokeMethod('resume');
+    if (webController != null) {
+      await webController!.runJavaScript("document.querySelector('video').play()");
+      isPlaying = true;
+      notifyListeners();
+    } else {
+      await _channel.invokeMethod('resume');
+    }
   }
 
   Future<void> seekTo(Duration targetPosition) async {
-    // Optimistically update position to prevent UI jump back
     _lastSeekTime = DateTime.now();
     position = targetPosition;
     notifyListeners();
-    await _channel.invokeMethod('seekTo', {'position': targetPosition.inMilliseconds});
+    
+    if (webController != null) {
+      final seconds = targetPosition.inMilliseconds / 1000;
+      await webController!.runJavaScript("document.querySelector('video').currentTime = $seconds");
+    } else {
+      await _channel.invokeMethod('seekTo', {'position': targetPosition.inMilliseconds});
+    }
   }
 
   Future<void> setPlaybackSpeed(double speed) async {
-    await _channel.invokeMethod('setPlaybackSpeed', {'speed': speed});
+    if (webController != null) {
+      await webController!.runJavaScript("document.querySelector('video').playbackRate = $speed");
+    } else {
+      await _channel.invokeMethod('setPlaybackSpeed', {'speed': speed});
+    }
   }
 
   Future<void> setResizeMode(int mode) async {
-    await _channel.invokeMethod('setResizeMode', {'mode': mode});
+    if (webController == null) {
+      await _channel.invokeMethod('setResizeMode', {'mode': mode});
+    }
   }
 
   Future<void> selectTrack(int type, int groupIndex, int trackIndex) async {
-    await _channel.invokeMethod('selectTrack', {
-      'type': type,
-      'groupIndex': groupIndex,
-      'trackIndex': trackIndex,
-    });
+    if (webController == null) {
+      await _channel.invokeMethod('selectTrack', {
+        'type': type,
+        'groupIndex': groupIndex,
+        'trackIndex': trackIndex,
+      });
+    }
   }
 
   Future<void> enterPiP() async {
-    await _channel.invokeMethod('enterPiP');
+    if (webController == null) {
+      await _channel.invokeMethod('enterPiP');
+    }
   }
 
   Future<void> setRotation(int rotation) async {
-    await _channel.invokeMethod('setRotation', {'rotation': rotation});
+    if (webController == null) {
+      await _channel.invokeMethod('setRotation', {'rotation': rotation});
+    }
   }
 
   Future<void> toggleOrientation() async {
-    await _channel.invokeMethod('toggleOrientation');
+    if (webController == null) {
+      await _channel.invokeMethod('toggleOrientation');
+    }
   }
 
   Future<void> setVolume(double volume) async {
-    await _channel.invokeMethod('setVolume', {'volume': volume});
+    if (webController != null) {
+      await webController!.runJavaScript("document.querySelector('video').volume = $volume");
+    } else {
+      await _channel.invokeMethod('setVolume', {'volume': volume});
+    }
+  }
+
+  Future<void> setSubtitleSource(String? path) async {
+    if (webController == null) {
+      await _channel.invokeMethod('setSubtitleSource', {'path': path});
+    }
+  }
+
+  Future<void> setSubtitleOffset(int offsetMs) async {
+    if (webController == null) {
+      await _channel.invokeMethod('setSubtitleOffset', {'offset': offsetMs});
+    }
+  }
+
+  Future<void> setSubtitleStyle({
+    double? fontSize,
+    String? color,
+    String? backgroundColor,
+  }) async {
+    if (webController == null) {
+      await _channel.invokeMethod('setSubtitleStyle', {
+        'fontSize': fontSize,
+        'color': color,
+        'backgroundColor': backgroundColor,
+      });
+    }
   }
 
   Future<void> setBrightness(double brightness) async {
-    await _channel.invokeMethod('setBrightness', {'brightness': brightness});
+    if (id != -1) {
+      await _channel.invokeMethod('setBrightness', {'brightness': brightness});
+    }
   }
 
   Future<double> getVolume() async {
-    return await _channel.invokeMethod('getVolume');
+    if (id != -1) {
+      return await _channel.invokeMethod('getVolume');
+    }
+    return 0.5;
   }
 
   Future<double> getBrightness() async {
-    return await _channel.invokeMethod('getBrightness');
+    if (id != -1) {
+      return await _channel.invokeMethod('getBrightness');
+    }
+    return 0.5;
   }
 }

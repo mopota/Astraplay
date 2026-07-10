@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:isar_community/isar.dart';
 import '../../../../core/database/app_database.dart';
 import '../../../../injection_container.dart';
+import '../../domain/repositories/stream_repository.dart';
 import 'package:dio/dio.dart';
 import 'dart:convert';
 import 'dart:async';
@@ -132,11 +133,19 @@ class _SeriesDetailsPageState extends State<SeriesDetailsPage> {
 
   Future<void> _toggleFavorite() async {
     try {
-      final db = sl<AppDatabase>();
-      await db.toggleFavorite(widget.stream.id);
-      setState(() {
-        _isFavorite = !_isFavorite;
-      });
+      final result = await sl<StreamRepository>().toggleFavorite(widget.stream);
+      result.fold(
+        (l) => null,
+        (updatedStream) {
+          if (mounted) {
+            setState(() {
+              _isFavorite = updatedStream.isFavorite;
+              widget.stream.id = updatedStream.id;
+              widget.stream.isFavorite = updatedStream.isFavorite;
+            });
+          }
+        },
+      );
     } catch (e) {
       debugPrint('Error toggling favorite: $e');
     }
@@ -711,6 +720,7 @@ class _SeriesDetailsPageState extends State<SeriesDetailsPage> {
       'streamUrl': ep['url'],
       'title': '${widget.stream.name} - ${ep['name']}',
       'streamId': widget.stream.id,
+      'stream': widget.stream,
       'episodeMetadata': jsonEncode({
         'url': ep['url'],
         'name': ep['name'],

@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../../features/playlist/domain/entities/playlist.entity.dart';
+import '../../../../features/playlist/presentation/bloc/playlist_bloc.dart';
 import '../../../../injection_container.dart';
 import '../../../../core/database/app_database.dart';
 import '../../../settings/presentation/cubit/settings_cubit.dart';
@@ -21,7 +22,6 @@ class _HomePageState extends State<HomePage> {
   List<AppStream> _favorites = [];
   List<HistoryRecord> _history = [];
   final Map<int, AppStream> _historyStreams = {};
-  bool _isLoading = false;
   Playlist? _activePlaylist;
   StreamSubscription? _streamsSubscription;
   StreamSubscription? _historySubscription;
@@ -31,6 +31,14 @@ class _HomePageState extends State<HomePage> {
     super.initState();
     unawaited(_loadData(isInitial: true));
     _initWatchers();
+    _checkAutoRefresh();
+  }
+
+  Future<void> _checkAutoRefresh() async {
+    final settings = sl<SettingsCubit>().state.settings;
+    if (settings.autoRefreshPlaylists && settings.activePlaylistId != null) {
+      context.read<PlaylistBloc>().add(RefreshPlaylistEvent(id: settings.activePlaylistId!));
+    }
   }
 
   void _initWatchers() {
@@ -52,7 +60,6 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _loadData({bool isInitial = false, bool silent = true}) async {
     if (!mounted) return;
-    if (!silent) setState(() => _isLoading = true);
 
     final db = sl<AppDatabase>();
     final activePlaylistId = sl<SettingsCubit>().state.settings.activePlaylistId;
@@ -73,32 +80,37 @@ class _HomePageState extends State<HomePage> {
     final allFavorites = results[0] as List<AppStream>;
     final allHistoryRecords = results[1] as List<HistoryRecord>;
     
-    final favorites = allFavorites.take(20).toList();
-    final historyRecords = allHistoryRecords.take(20).toList();
-    
-    // 2. Batch fetch streams for history items
+    // 2. Batch fetch streams for history items and group them
     _historyStreams.clear();
     final List<HistoryRecord> filteredHistory = [];
+    final Set<int> seenStreamIds = {};
     
-    if (historyRecords.isNotEmpty) {
-      final streamIds = historyRecords.map((h) => h.streamId).toList();
+    // We only want the most recent episode per series/movie
+    final recentHistory = allHistoryRecords.take(50).toList();
+    
+    if (recentHistory.isNotEmpty) {
+      final streamIds = recentHistory.map((h) => h.streamId).toList();
       final streams = await db.isar.appStreams.getAll(streamIds);
       
-      for (var i = 0; i < historyRecords.length; i++) {
+      for (var i = 0; i < recentHistory.length; i++) {
+        final h = recentHistory[i];
         final s = streams[i];
-        if (s != null) {
-          _historyStreams[historyRecords[i].streamId] = s;
-          filteredHistory.add(historyRecords[i]);
+        
+        if (s != null && !seenStreamIds.contains(h.streamId)) {
+          _historyStreams[h.streamId] = s;
+          filteredHistory.add(h);
+          seenStreamIds.add(h.streamId);
         }
+        
+        if (filteredHistory.length >= 20) break;
       }
     }
 
     if (mounted) {
       setState(() {
         _activePlaylist = activePlaylist;
-        _favorites = favorites;
+        _favorites = allFavorites.take(20).toList();
         _history = filteredHistory;
-        if (!silent) _isLoading = false;
       });
     }
   }
@@ -138,12 +150,12 @@ class _HomePageState extends State<HomePage> {
                   ),
                 ),
 
-                if (!_isLoading && _history.isNotEmpty) ...[
+                if (_history.isNotEmpty) ...[
                   _buildSectionHeader('Continue Watching', Icons.history_rounded),
                   SliverToBoxAdapter(child: _buildHistoryList()),
                 ],
 
-                if (!_isLoading && _favorites.isNotEmpty) ...[
+                if (_favorites.isNotEmpty) ...[
                   _buildSectionHeader('Your Favorites', Icons.favorite_rounded, 
                     onSeeAll: () => context.push('/favorites')),
                   SliverToBoxAdapter(child: _buildFavoritesList()),
@@ -318,6 +330,8 @@ class _HomePageState extends State<HomePage> {
                 'streamUrl': epInfo != null ? epInfo['url'] : stream.data.streamUrl,
                 'title': title,
                 'streamId': stream.id,
+                'playlistId': stream.playlistId,
+                'categoryName': stream.categoryName,
                 'episodeMetadata': h.episodeMetadata,
                 'headers': stream.data.headersJson != null ? Map<String, String>.from(jsonDecode(stream.data.headersJson!)) : null,
               }),
@@ -382,6 +396,8 @@ class _HomePageState extends State<HomePage> {
                     'streamUrl': stream.data.streamUrl, 
                     'title': stream.name, 
                     'streamId': stream.id,
+                    'playlistId': stream.playlistId,
+                    'categoryName': stream.categoryName,
                     'headers': stream.data.headersJson != null ? Map<String, String>.from(jsonDecode(stream.data.headersJson!)) : null,
                   });
                 }

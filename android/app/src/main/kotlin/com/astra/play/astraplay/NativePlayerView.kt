@@ -82,6 +82,10 @@ class NativePlayerView(
         }
     }
 
+    private var currentUrl: String? = null
+    private var currentHeaders: Map<String, String>? = null
+    private var externalSubtitlePath: String? = null
+    private var subtitleOffsetMs: Long = 0
     private val TAG = "NativePlayerView"
 
     init {
@@ -270,6 +274,30 @@ class NativePlayerView(
                 playerView.rotation = rotation.toFloat()
                 result.success(null)
             }
+            "setSubtitleSource" -> {
+                val path = call.argument<String>("path")
+                externalSubtitlePath = path
+                refreshMediaItem()
+                result.success(null)
+            }
+            "setSubtitleOffset" -> {
+                val offset = (call.argument<Int>("offset") ?: 0).toLong()
+                subtitleOffsetMs = offset
+                // Note: Real-time offset in ExoPlayer is complex. 
+                // For now, we refresh the media item with the new offset if supported by the source,
+                // but ExoPlayer SubtitleConfiguration doesn't have an offset.
+                // Re-preparing with a custom source or offset is a future enhancement.
+                // We'll just store it and result success for now.
+                result.success(null)
+            }
+            "setSubtitleStyle" -> {
+                val fontSize = call.argument<Double>("fontSize")?.toFloat() ?: 18f
+                val colorStr = call.argument<String>("color") ?: "White"
+                val bgColorStr = call.argument<String>("backgroundColor") ?: "Black Transparent"
+                
+                updateSubtitleStyle(fontSize, colorStr, bgColorStr)
+                result.success(null)
+            }
             "toggleOrientation" -> {
                 val act = getSafeActivity()
                 if (act == null) {
@@ -379,7 +407,54 @@ class NativePlayerView(
         ))
     }
 
+    private fun updateSubtitleStyle(fontSize: Float, colorStr: String, bgColorStr: String) {
+        val textColor = when (colorStr) {
+            "Yellow" -> Color.YELLOW
+            "Green" -> Color.GREEN
+            "Cyan" -> Color.CYAN
+            else -> Color.WHITE
+        }
+        
+        val bgColor = when (bgColorStr) {
+            "Black" -> Color.BLACK
+            "Black Transparent" -> Color.parseColor("#80000000")
+            else -> Color.TRANSPARENT
+        }
+
+        // Accessing SubtitleView in Media3 PlayerView
+        val subId = context.resources.getIdentifier("exo_subtitles", "id", context.packageName)
+        val subtitleView = if (subId != 0) playerView.findViewById<View>(subId) else null
+
+        if (subtitleView != null && subtitleView is androidx.media3.ui.SubtitleView) {
+            subtitleView.setFixedTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, fontSize)
+            subtitleView.setApplyEmbeddedStyles(false)
+            subtitleView.setBottomPaddingFraction(0.1f)
+            
+            val style = androidx.media3.ui.CaptionStyleCompat(
+                textColor,
+                bgColor,
+                Color.TRANSPARENT,
+                androidx.media3.ui.CaptionStyleCompat.EDGE_TYPE_NONE,
+                Color.BLACK,
+                null
+            )
+            subtitleView.setStyle(style)
+        }
+    }
+
+    private fun refreshMediaItem() {
+        val url = currentUrl ?: return
+        val pos = player.currentPosition
+        val isPlaying = player.isPlaying
+        play(url, currentHeaders)
+        player.seekTo(pos)
+        if (isPlaying) player.play()
+    }
+
     private fun play(url: String, headers: Map<String, String>? = null) {
+        currentUrl = url
+        currentHeaders = headers
+        
         val httpDataSourceFactory = DefaultHttpDataSource.Factory()
             .setAllowCrossProtocolRedirects(true)
             .setUserAgent(headers?.get("User-Agent") ?: "AstraPlay/1.0")
@@ -420,16 +495,25 @@ class NativePlayerView(
             }
         }
 
-        val mediaItem = mediaItemBuilder.apply {
-                when {
-                    url.contains(".m3u8") -> setMimeType(MimeTypes.APPLICATION_M3U8)
-                    url.contains(".mpd") -> setMimeType(MimeTypes.APPLICATION_MPD)
-                    url.contains(".ts") -> setMimeType(MimeTypes.VIDEO_MP2T)
-                }
+        mediaItemBuilder.apply {
+            when {
+                url.contains(".m3u8") -> setMimeType(MimeTypes.APPLICATION_M3U8)
+                url.contains(".mpd") -> setMimeType(MimeTypes.APPLICATION_MPD)
+                url.contains(".ts") -> setMimeType(MimeTypes.VIDEO_MP2T)
             }
-            .build()
+        }
+        
+        if (externalSubtitlePath != null) {
+            val subtitleConfig = MediaItem.SubtitleConfiguration.Builder(android.net.Uri.parse(externalSubtitlePath))
+                .setMimeType(MimeTypes.APPLICATION_SUBRIP)
+                .setLanguage("und")
+                .setSelectionFlags(C.SELECTION_FLAG_DEFAULT)
+                .build()
+            mediaItemBuilder.setSubtitleConfigurations(listOf(subtitleConfig))
+        }
 
-        val mediaSource = mediaSourceFactory.createMediaSource(mediaItem)
+        val mediaItemFinal = mediaItemBuilder.build()
+        val mediaSource = mediaSourceFactory.createMediaSource(mediaItemFinal)
         
         player.setMediaSource(mediaSource)
         player.prepare()
