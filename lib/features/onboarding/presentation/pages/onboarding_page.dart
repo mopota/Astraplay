@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../../../core/localization/app_localizations.dart';
 
 class OnboardingPage extends StatefulWidget {
   const OnboardingPage({super.key});
@@ -14,28 +15,28 @@ class _OnboardingPageState extends State<OnboardingPage> {
   final PageController _pageController = PageController();
   int _currentPage = 0;
 
-  final List<OnboardingItem> _items = [
+  List<OnboardingItem> _getItems(BuildContext context) => [
     OnboardingItem(
-      title: 'Welcome to AstraPlay',
-      description: 'Your premium IPTV streaming experience starts here. Beautifully designed and easy to use.',
+      title: context.tr('welcome'),
+      description: context.tr('onboarding1_desc'),
       icon: Icons.auto_awesome_rounded,
       color: Colors.blue,
     ),
     OnboardingItem(
-      title: 'Global Content',
-      description: 'Stream live TV, movies, and series from all over the world. Organize your playlists with ease.',
+      title: context.tr('onboarding2_title'),
+      description: context.tr('onboarding2_desc'),
       icon: Icons.movie_filter_rounded,
       color: Colors.orange,
     ),
     OnboardingItem(
-      title: 'Powerful Player',
-      description: 'Enjoy high-quality streaming with our optimized player featuring gesture controls and subtitle support.',
+      title: context.tr('onboarding3_title'),
+      description: context.tr('onboarding3_desc'),
       icon: Icons.play_circle_filled_rounded,
       color: Colors.purple,
     ),
     OnboardingItem(
-      title: 'Ready to Start?',
-      description: 'Add your first playlist and start exploring your favorite content now.',
+      title: context.tr('onboarding4_title'),
+      description: context.tr('onboarding4_desc'),
       icon: Icons.rocket_launch_rounded,
       color: Colors.teal,
     ),
@@ -51,14 +52,16 @@ class _OnboardingPageState extends State<OnboardingPage> {
 
   @override
   Widget build(BuildContext context) {
+    final items = _getItems(context);
+    
     return Scaffold(
       body: Stack(
         children: [
           PageView.builder(
             controller: _pageController,
             onPageChanged: (index) => setState(() => _currentPage = index),
-            itemCount: _items.length,
-            itemBuilder: (context, index) => _OnboardingView(item: _items[index]),
+            itemCount: items.length,
+            itemBuilder: (context, index) => _OnboardingView(item: items[index]),
           ),
           Positioned(
             bottom: 40,
@@ -69,7 +72,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
               children: [
                 Row(
                   children: List.generate(
-                    _items.length,
+                    items.length,
                     (index) => AnimatedContainer(
                       duration: const Duration(milliseconds: 300),
                       margin: const EdgeInsets.only(right: 8),
@@ -84,11 +87,11 @@ class _OnboardingPageState extends State<OnboardingPage> {
                     ),
                   ),
                 ),
-                if (_currentPage == _items.length - 1)
+                if (_currentPage == items.length - 1)
                   FilledButton.icon(
                     onPressed: _completeOnboarding,
                     icon: const Icon(Icons.check_rounded),
-                    label: const Text('Get Started'),
+                    label: Text(context.tr('get_started')),
                   ).animate().scale().fadeIn()
                 else
                   IconButton.filled(

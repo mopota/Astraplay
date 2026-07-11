@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
@@ -38,23 +40,9 @@ class SettingsPage extends StatelessWidget {
                   title: Text(context.tr('select_source'), style: const TextStyle(fontWeight: FontWeight.bold)),
                   trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14),
                   onTap: () async {
-                    HapticsHelper.light();
+                    unawaited(HapticsHelper.light());
                     await cubit.setActivePlaylist(null);
                     if (context.mounted) context.go('/playlists');
-                  },
-                ),
-                const Divider(indent: 72, endIndent: 20, height: 1),
-                ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: Colors.pink.withAlpha(20),
-                    child: const Icon(Icons.folder_special_rounded, color: Colors.pink, size: 20),
-                  ),
-                  title: Text(context.tr('favorite_folders'), style: const TextStyle(fontWeight: FontWeight.bold)),
-                  subtitle: Text(context.tr('favorite_folders_desc'), style: const TextStyle(fontSize: 12)),
-                  trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14),
-                  onTap: () {
-                    HapticsHelper.light();
-                    context.push('/home/favorites/folders');
                   },
                 ),
                 const Divider(indent: 72, endIndent: 20, height: 1),
@@ -66,9 +54,9 @@ class SettingsPage extends StatelessWidget {
                   title: Text(context.tr('auto_refresh'), style: const TextStyle(fontWeight: FontWeight.bold)),
                   subtitle: Text(context.tr('auto_refresh_desc'), style: const TextStyle(fontSize: 12)),
                   value: settings.autoRefreshPlaylists,
-                  onChanged: (v) {
-                    HapticsHelper.light();
-                    cubit.updateSettings((s) => s.autoRefreshPlaylists = v);
+                  onChanged: (v) async {
+                    unawaited(HapticsHelper.light());
+                    await cubit.updateSettings((s) => s.autoRefreshPlaylists = v);
                   },
                 ),
               ]),
@@ -83,7 +71,7 @@ class SettingsPage extends StatelessWidget {
                   subtitle: Text(settings.themeMode.toUpperCase(), style: TextStyle(color: colorScheme.outline)),
                   trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14),
                   onTap: () {
-                    HapticsHelper.light();
+                    unawaited(HapticsHelper.light());
                     _showThemePicker(context, settings.themeMode);
                   },
                 ),
@@ -97,7 +85,7 @@ class SettingsPage extends StatelessWidget {
                   subtitle: Text(settings.language == 'ar' ? 'العربية' : 'English', style: TextStyle(color: colorScheme.outline)),
                   trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14),
                   onTap: () {
-                    HapticsHelper.light();
+                    unawaited(HapticsHelper.light());
                     _showLanguagePicker(context, settings.language);
                   },
                 ),
@@ -111,9 +99,9 @@ class SettingsPage extends StatelessWidget {
                   ),
                   title: Text(context.tr('hardware_accel'), style: const TextStyle(fontWeight: FontWeight.bold)),
                   value: settings.hardwareAcceleration,
-                  onChanged: (v) {
-                    HapticsHelper.light();
-                    cubit.updateSettings((s) => s.hardwareAcceleration = v);
+                  onChanged: (v) async {
+                    unawaited(HapticsHelper.light());
+                    await cubit.updateSettings((s) => s.hardwareAcceleration = v);
                   },
                 ),
                 const Divider(indent: 72, endIndent: 20, height: 1),
@@ -126,7 +114,7 @@ class SettingsPage extends StatelessWidget {
                   subtitle: Text('${settings.bufferMs} ms', style: TextStyle(color: colorScheme.outline, fontSize: 12)),
                   trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14),
                   onTap: () {
-                    HapticsHelper.light();
+                    unawaited(HapticsHelper.light());
                     _showBufferPicker(context, settings.bufferMs);
                   },
                 ),
@@ -140,7 +128,7 @@ class SettingsPage extends StatelessWidget {
                   ),
                   title: Text(context.tr('clear_cache'), style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.red)),
                   onTap: () async {
-                    HapticsHelper.medium();
+                    unawaited(HapticsHelper.medium());
                     try {
                       final tempDir = await getTemporaryDirectory();
                       if (tempDir.existsSync()) {
@@ -153,13 +141,13 @@ class SettingsPage extends StatelessWidget {
                       }
                       if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Cache cleared successfully')),
+                          SnackBar(content: Text(context.tr('clear_cache_success'))),
                         );
                       }
                     } catch (e) {
                       if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Error clearing cache: $e')),
+                          SnackBar(content: Text('${context.tr('clear_cache_error')}: $e')),
                         );
                       }
                     }

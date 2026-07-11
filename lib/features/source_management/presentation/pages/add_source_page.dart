@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../../../core/localization/app_localizations.dart';
 
 class AddSourcePage extends StatelessWidget {
   const AddSourcePage({super.key});
@@ -12,7 +13,7 @@ class AddSourcePage extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('New Source', style: TextStyle(fontWeight: FontWeight.bold)),
+        title: Text(context.tr('new_source'), style: const TextStyle(fontWeight: FontWeight.bold)),
         centerTitle: true,
       ),
       body: SingleChildScrollView(
@@ -30,7 +31,7 @@ class AddSourcePage extends StatelessWidget {
             ).animate().scale(duration: 600.ms, curve: Curves.easeOutBack),
             const SizedBox(height: 24),
             Text(
-              'Add Content',
+              context.tr('add_content'),
               style: GoogleFonts.poppins(
                 fontSize: 28, 
                 fontWeight: FontWeight.w800,
@@ -39,15 +40,15 @@ class AddSourcePage extends StatelessWidget {
             ).animate().fadeIn(delay: 200.ms),
             const SizedBox(height: 8),
             Text(
-              'Select how you want to import your IPTV collection',
+              context.tr('add_content_desc'),
               textAlign: TextAlign.center,
               style: TextStyle(color: colorScheme.outline, fontSize: 14),
             ).animate().fadeIn(delay: 300.ms),
             const SizedBox(height: 48),
             
             _SourceTypeCard(
-              title: 'Xtream Codes',
-              subtitle: 'Connect with username and password',
+              title: context.tr('xtream_codes'),
+              subtitle: context.tr('xtream_desc'),
               icon: Icons.vpn_key_rounded,
               color: colorScheme.primary,
               onTap: () => context.push('/add-source/xtream'),
@@ -55,8 +56,8 @@ class AddSourcePage extends StatelessWidget {
             
             const SizedBox(height: 16),
             _SourceTypeCard(
-              title: 'M3U Playlist',
-              subtitle: 'Import remote playlist from URL',
+              title: context.tr('m3u_playlist'),
+              subtitle: context.tr('m3u_desc'),
               icon: Icons.link_rounded,
               color: colorScheme.secondary,
               onTap: () => context.push('/add-source/playlist'),
@@ -64,8 +65,8 @@ class AddSourcePage extends StatelessWidget {
             
             const SizedBox(height: 16),
             _SourceTypeCard(
-              title: 'Single Stream',
-              subtitle: 'Direct link to a specific channel',
+              title: context.tr('single_stream'),
+              subtitle: context.tr('direct_stream_card_desc'),
               icon: Icons.bolt_rounded,
               color: Colors.orange,
               onTap: () => context.push('/add-source/direct'),
@@ -73,8 +74,8 @@ class AddSourcePage extends StatelessWidget {
             
             const SizedBox(height: 16),
             _SourceTypeCard(
-              title: 'Local Import',
-              subtitle: 'Pick an M3U file from storage',
+              title: context.tr('local_import'),
+              subtitle: context.tr('local_import_desc'),
               icon: Icons.folder_open_rounded,
               color: Colors.purple,
               onTap: () => context.push('/add-source/local'),

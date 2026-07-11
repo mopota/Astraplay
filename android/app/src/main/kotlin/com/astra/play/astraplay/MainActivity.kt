@@ -1,10 +1,10 @@
 package com.astra.play.astraplay
 
 import android.content.res.Configuration
-import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 
-class MainActivity : FlutterActivity() {
+class MainActivity : FlutterFragmentActivity() {
     private var nativePlayerFactory: NativePlayerFactory? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -24,10 +24,5 @@ class MainActivity : FlutterActivity() {
     override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         nativePlayerFactory?.notifyPiPChanged(isInPictureInPictureMode)
-    }
-
-    override fun onUserLeaveHint() {
-        // Handle automatic PiP if necessary, but we triggered it manually from Flutter
-        super.onUserLeaveHint()
     }
 }

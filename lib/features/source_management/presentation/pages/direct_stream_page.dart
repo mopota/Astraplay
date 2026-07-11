@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import '../../../../core/localization/app_localizations.dart';
 import '../../../playlist/presentation/bloc/playlist_bloc.dart';
 
 class DirectStreamPage extends StatefulWidget {
@@ -15,7 +16,7 @@ class _DirectStreamPageState extends State<DirectStreamPage> {
   final _nameController = TextEditingController();
 
   String _normalizeUrl(String url) {
-    String trimmed = url.trim();
+    final String trimmed = url.trim();
     if (trimmed.isEmpty) return '';
     if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) {
       return 'http://$trimmed';
@@ -35,7 +36,7 @@ class _DirectStreamPageState extends State<DirectStreamPage> {
           context.go('/playlists'); 
           
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Stream added successfully')),
+            SnackBar(content: Text(context.tr('direct_stream_success'))),
           );
           
           // Small delay to ensure the router has settled
@@ -55,26 +56,26 @@ class _DirectStreamPageState extends State<DirectStreamPage> {
         }
       },
       child: Scaffold(
-        appBar: AppBar(title: const Text('Direct Stream')),
+        appBar: AppBar(title: Text(context.tr('direct_stream'))),
         body: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Watch Single Link',
-                style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
+              Text(
+                context.tr('watch_single_link'),
+                style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
               ),
               const SizedBox(height: 8),
-              const Text(
-                'Enter a direct stream URL to play it immediately and save it for later.',
-                style: TextStyle(color: Colors.grey),
+              Text(
+                context.tr('direct_stream_desc_long'),
+                style: const TextStyle(color: Colors.grey),
               ),
               const SizedBox(height: 32),
               TextField(
                 controller: _nameController,
                 decoration: InputDecoration(
-                  labelText: 'Friendly Name',
+                  labelText: context.tr('friendly_name'),
                   hintText: 'e.g., Sports Channel',
                   prefixIcon: const Icon(Icons.label_important_outline_rounded),
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(20)),
@@ -84,7 +85,7 @@ class _DirectStreamPageState extends State<DirectStreamPage> {
               TextField(
                 controller: _urlController,
                 decoration: InputDecoration(
-                  labelText: 'Stream URL',
+                  labelText: context.tr('stream_url'),
                   hintText: 'http://.../playlist.m3u8',
                   prefixIcon: const Icon(Icons.link_rounded),
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(20)),
@@ -107,7 +108,7 @@ class _DirectStreamPageState extends State<DirectStreamPage> {
                             width: 20, 
                             child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)
                           )
-                        : const Text('SAVE & WATCH NOW', style: TextStyle(fontWeight: FontWeight.bold)),
+                        : Text(context.tr('save_watch_now'), style: const TextStyle(fontWeight: FontWeight.bold)),
                     ),
                   );
                 },
@@ -127,7 +128,7 @@ class _DirectStreamPageState extends State<DirectStreamPage> {
 
     if (name.isEmpty || url.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter name and URL')),
+        SnackBar(content: Text(context.tr('enter_name_url'))),
       );
       return;
     }
@@ -144,7 +145,7 @@ class _DirectStreamPageState extends State<DirectStreamPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Formats Support:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+          Text(context.tr('formats_support'), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
           const SizedBox(height: 12),
           Wrap(
             spacing: 6,

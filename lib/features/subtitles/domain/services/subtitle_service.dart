@@ -1,15 +1,20 @@
-import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:path_provider/path_provider.dart';
 import '../../data/models/subtitle_model.dart';
 
 class SubtitleService {
+  // TODO: Move to a secure backend or environment variable in Production
+  static const String _apiKey = 'rjnnL8CsmJk1u1oP6JIpLdHl1o0xYJgm';
+
   final Dio _dio = Dio(BaseOptions(
     baseUrl: 'https://api.opensubtitles.com/api/v1',
+    connectTimeout: const Duration(seconds: 10),
+    receiveTimeout: const Duration(seconds: 10),
     headers: {
       'Content-Type': 'application/json',
-      'Api-Key': 'rjnnL8CsmJk1u1oP6JIpLdHl1o0xYJgm', // User should provide this
-      'User-Agent': 'AstraPlay v1.0.0',
+      'Api-Key': _apiKey,
+      'User-Agent': 'Astra',
+      'Accept': 'application/json',
     },
   ));
 
@@ -39,24 +44,39 @@ class SubtitleService {
   }
 
   Future<String?> downloadSubtitle(SubtitleSearchResult sub) async {
-    try {
-      // 1. Get download link
-      final response = await _dio.post('/download', data: {
-        'file_id': int.tryParse(sub.downloadUrl) ?? 0,
-      });
+    int retryCount = 0;
+    const int maxRetries = 2;
 
-      if (response.statusCode == 200) {
-        final downloadUrl = response.data['link'];
-        
-        // 2. Download the file
-        final tempDir = await getTemporaryDirectory();
-        final filePath = '${tempDir.path}/${sub.id}.srt';
-        
-        await _dio.download(downloadUrl, filePath);
-        return filePath;
+    while (retryCount <= maxRetries) {
+      try {
+        // 1. Get download link
+        final response = await _dio.post('/download', data: {
+          'file_id': int.tryParse(sub.downloadUrl) ?? 0,
+        });
+
+        if (response.statusCode == 200) {
+          final downloadUrl = response.data['link'];
+          
+          // 2. Download the file
+          final tempDir = await getTemporaryDirectory();
+          final filePath = '${tempDir.path}/${sub.id}.srt';
+          
+          await _dio.download(downloadUrl, filePath);
+          return filePath;
+        }
+      } catch (e) {
+        if (e is DioException && e.response?.statusCode == 503) {
+          retryCount++;
+          if (retryCount <= maxRetries) {
+            // Wait for 2 seconds before retrying 503 errors
+            await Future.delayed(Duration(seconds: 2 * retryCount));
+            continue;
+          }
+          throw Exception('OpenSubtitles is currently overloaded (503). Please try again in a few moments.');
+        }
+        rethrow;
       }
-    } catch (e) {
-      print('Error downloading subtitle: $e');
+      break;
     }
     return null;
   }

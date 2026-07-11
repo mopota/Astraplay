@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../../../core/localization/app_localizations.dart';
 import '../../../../injection_container.dart';
 import '../../../../core/database/app_database.dart';
 import '../../domain/repositories/stream_repository.dart';
@@ -66,7 +67,7 @@ class _StreamListPageState extends State<StreamListPage> {
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
               child: SearchBar(
                 controller: _searchController,
-                hintText: 'Search in ${widget.category}...',
+                hintText: '${context.tr('search_in')} ${widget.category}...',
                 onChanged: (value) => setState(() => _searchQuery = value),
                 leading: const Icon(Icons.search_rounded, size: 20),
                 elevation: WidgetStateProperty.all(0),
@@ -120,21 +121,24 @@ class _StreamListPageState extends State<StreamListPage> {
 
                     if (filteredStreams.isEmpty) {
                       return SliverFillRemaining(
+                        hasScrollBody: false,
                         child: Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(
-                                _searchQuery.isEmpty ? Icons.video_library_outlined : Icons.search_off_rounded,
-                                size: 80,
-                                color: colorScheme.outline.withAlpha(100),
-                              ),
-                              const SizedBox(height: 16),
-                              Text(
-                                _searchQuery.isEmpty ? 'No items found' : 'No results for "$_searchQuery"',
-                                style: TextStyle(color: colorScheme.outline, fontWeight: FontWeight.bold),
-                              ),
-                            ],
+                          child: SingleChildScrollView(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  _searchQuery.isEmpty ? Icons.video_library_outlined : Icons.search_off_rounded,
+                                  size: 80,
+                                  color: colorScheme.outline.withAlpha(100),
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  _searchQuery.isEmpty ? context.tr('no_items') : '${context.tr('no_results_for')} "$_searchQuery"',
+                                  style: TextStyle(color: colorScheme.outline, fontWeight: FontWeight.bold),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       );
@@ -207,8 +211,8 @@ class _StreamListPageState extends State<StreamListPage> {
       icon: const Icon(Icons.sort_rounded),
       onSelected: (value) => setState(() => _sortBy = value),
       itemBuilder: (context) => [
-        const PopupMenuItem(value: 'name', child: Text('Sort by Name (A-Z)')),
-        const PopupMenuItem(value: 'newest', child: Text('Sort by Newest')),
+        PopupMenuItem(value: 'name', child: Text(context.tr('sort_name'))),
+        PopupMenuItem(value: 'newest', child: Text(context.tr('sort_newest'))),
       ],
     );
   }
@@ -367,7 +371,7 @@ class _StreamCardState extends State<_StreamCard> {
                         children: [
                           const Icon(Icons.fiber_manual_record, color: Colors.white, size: 8),
                           const SizedBox(width: 4),
-                          const Text("LIVE", style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w900)),
+                          Text(context.tr('live').toUpperCase(), style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w900)),
                         ],
                       ),
                     )
@@ -378,7 +382,7 @@ class _StreamCardState extends State<_StreamCard> {
                         color: colorScheme.primary,
                         borderRadius: BorderRadius.circular(6),
                       ),
-                      child: const Text("SERIES", style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w900)),
+                      child: Text(context.tr('series').toUpperCase(), style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w900)),
                     )
                   else
                     const SizedBox(),

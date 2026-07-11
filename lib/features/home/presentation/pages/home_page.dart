@@ -8,7 +8,8 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../../features/playlist/domain/entities/playlist.entity.dart';
 import '../../../../features/playlist/presentation/bloc/playlist_bloc.dart';
 import '../../../../injection_container.dart';
-import '../../../../core/database/app_database.dart';
+import '../../../../core/database/app_database.dart' as db_core;
+import '../../../../core/localization/app_localizations.dart';
 import '../../../settings/presentation/cubit/settings_cubit.dart';
 
 class HomePage extends StatefulWidget {
@@ -19,10 +20,10 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  List<AppStream> _favorites = [];
-  List<HistoryRecord> _history = [];
-  final Map<int, AppStream> _historyStreams = {};
-  Playlist? _activePlaylist;
+  List<db_core.AppStream> _favorites = [];
+  List<db_core.HistoryRecord> _history = [];
+  final Map<int, db_core.AppStream> _historyStreams = {};
+  db_core.Playlist? _activePlaylist;
   StreamSubscription? _streamsSubscription;
   StreamSubscription? _historySubscription;
 
@@ -42,7 +43,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _initWatchers() {
-    final db = sl<AppDatabase>();
+    final db = sl<db_core.AppDatabase>();
     _streamsSubscription = db.isar.appStreams.watchLazy().listen((_) {
       _loadData(isInitial: false, silent: true);
     });
@@ -60,8 +61,9 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _loadData({bool isInitial = false, bool silent = true}) async {
     if (!mounted) return;
+    final sw = Stopwatch()..start();
 
-    final db = sl<AppDatabase>();
+    final db = sl<db_core.AppDatabase>();
     final activePlaylistId = sl<SettingsCubit>().state.settings.activePlaylistId;
 
     if (activePlaylistId == null) {
@@ -71,45 +73,37 @@ class _HomePageState extends State<HomePage> {
 
     final activePlaylist = await db.isar.playlists.get(activePlaylistId);
     
-    // 1. Fetch Favorites and History Records using helpers
+    // Fetch pre-filtered and pre-sorted data from DB
     final results = await Future.wait([
       db.getFavoritesByPlaylist(activePlaylistId),
-      db.getHistoryByPlaylist(activePlaylistId),
+      db.getRecentUniqueHistory(activePlaylistId, limit: 15),
     ]);
 
-    final allFavorites = results[0] as List<AppStream>;
-    final allHistoryRecords = results[1] as List<HistoryRecord>;
+    final allFavorites = results[0] as List<db_core.AppStream>;
+    final historyRecords = results[1] as List<db_core.HistoryRecord>;
     
-    // 2. Batch fetch streams for history items and group them
     _historyStreams.clear();
-    final List<HistoryRecord> filteredHistory = [];
-    final Set<int> seenStreamIds = {};
+    final List<db_core.HistoryRecord> filteredHistory = [];
     
-    // We only want the most recent episode per series/movie
-    final recentHistory = allHistoryRecords.take(50).toList();
-    
-    if (recentHistory.isNotEmpty) {
-      final streamIds = recentHistory.map((h) => h.streamId).toList();
+    if (historyRecords.isNotEmpty) {
+      final streamIds = historyRecords.map((h) => h.streamId).toList();
       final streams = await db.isar.appStreams.getAll(streamIds);
       
-      for (var i = 0; i < recentHistory.length; i++) {
-        final h = recentHistory[i];
+      for (var i = 0; i < historyRecords.length; i++) {
         final s = streams[i];
-        
-        if (s != null && !seenStreamIds.contains(h.streamId)) {
-          _historyStreams[h.streamId] = s;
-          filteredHistory.add(h);
-          seenStreamIds.add(h.streamId);
+        if (s != null) {
+          _historyStreams[historyRecords[i].streamId] = s;
+          filteredHistory.add(historyRecords[i]);
         }
-        
-        if (filteredHistory.length >= 20) break;
       }
     }
+
+    debugPrint('[Performance] Home Data Load: ${sw.elapsedMilliseconds}ms');
 
     if (mounted) {
       setState(() {
         _activePlaylist = activePlaylist;
-        _favorites = allFavorites.take(20).toList();
+        _favorites = allFavorites.take(15).toList();
         _history = filteredHistory;
       });
     }
@@ -151,12 +145,12 @@ class _HomePageState extends State<HomePage> {
                 ),
 
                 if (_history.isNotEmpty) ...[
-                  _buildSectionHeader('Continue Watching', Icons.history_rounded),
+                  _buildSectionHeader(context.tr('history'), Icons.history_rounded),
                   SliverToBoxAdapter(child: _buildHistoryList()),
                 ],
 
                 if (_favorites.isNotEmpty) ...[
-                  _buildSectionHeader('Your Favorites', Icons.favorite_rounded, 
+                  _buildSectionHeader(context.tr('your_favorites'), Icons.favorite_rounded, 
                     onSeeAll: () => context.push('/favorites')),
                   SliverToBoxAdapter(child: _buildFavoritesList()),
                 ],
@@ -226,10 +220,10 @@ class _HomePageState extends State<HomePage> {
           crossAxisSpacing: 16,
           childAspectRatio: 1.4,
           children: [
-            _buildDashboardItem('LIVE TV', Icons.live_tv_rounded, Colors.orange, () => _handleQuickAction(context, StreamType.live)),
-            _buildDashboardItem('MOVIES', Icons.movie_filter_rounded, Colors.blue, () => _handleQuickAction(context, StreamType.movie)),
-            _buildDashboardItem('SERIES', Icons.video_library_rounded, Colors.purple, () => _handleQuickAction(context, StreamType.series)),
-            _buildDashboardItem('FAVORITES', Icons.favorite_rounded, Colors.red, () => context.push('/favorites')),
+            _buildDashboardItem(context.tr('live_tv'), Icons.live_tv_rounded, Colors.orange, () => _handleQuickAction(context, db_core.StreamType.live)),
+            _buildDashboardItem(context.tr('movies'), Icons.movie_filter_rounded, Colors.blue, () => _handleQuickAction(context, db_core.StreamType.movie)),
+            _buildDashboardItem(context.tr('series'), Icons.video_library_rounded, Colors.purple, () => _handleQuickAction(context, db_core.StreamType.series)),
+            _buildDashboardItem(context.tr('favorites').toUpperCase(), Icons.favorite_rounded, Colors.red, () => context.push('/favorites')),
           ],
         ),
       ],
@@ -276,7 +270,7 @@ class _HomePageState extends State<HomePage> {
           children: [
             Icon(Icons.search_rounded, color: colorScheme.primary, size: 24),
             const SizedBox(width: 16),
-            Text('Search for content...', style: TextStyle(color: colorScheme.outline, fontSize: 16)),
+            Text(context.tr('search_hint'), style: TextStyle(color: colorScheme.outline, fontSize: 16)),
           ],
         ),
       ),
@@ -294,7 +288,7 @@ class _HomePageState extends State<HomePage> {
             Text(title, style: GoogleFonts.poppins(fontSize: 20, fontWeight: FontWeight.w800)),
             const Spacer(),
             if (onSeeAll != null)
-              TextButton(onPressed: onSeeAll, child: const Text('See All')),
+              TextButton(onPressed: onSeeAll, child: Text(context.tr('see_all'))),
           ],
         ),
       ),
@@ -347,7 +341,16 @@ class _HomePageState extends State<HomePage> {
                       errorWidget: (_, __, ___) => Container(color: Colors.black12, child: const Icon(Icons.play_circle_outline, size: 48)),
                     ),
                   ),
-                  Container(decoration: BoxDecoration(borderRadius: BorderRadius.circular(28), gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.transparent, Colors.black87]))),
+                  Container(
+                    decoration: const BoxDecoration(
+                      borderRadius: BorderRadius.all(Radius.circular(28)),
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [Colors.transparent, Colors.black87],
+                      ),
+                    ),
+                  ),
                   Positioned(
                     bottom: 16, left: 16, right: 16,
                     child: Column(
@@ -387,9 +390,9 @@ class _HomePageState extends State<HomePage> {
             margin: const EdgeInsets.only(right: 16),
             child: InkWell(
               onTap: () {
-                if (stream.streamType == StreamType.series) {
+                if (stream.streamType == db_core.StreamType.series) {
                   context.push('/series-details', extra: {'stream': stream});
-                } else if (stream.streamType == StreamType.movie) {
+                } else if (stream.streamType == db_core.StreamType.movie) {
                   context.push('/movie-details', extra: {'stream': stream});
                 } else {
                   _navigateToPlayer({
@@ -422,10 +425,10 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  void _handleQuickAction(BuildContext context, StreamType type) async {
+  void _handleQuickAction(BuildContext context, db_core.StreamType type) async {
     final activePlaylistId = sl<SettingsCubit>().state.settings.activePlaylistId;
     if (activePlaylistId == null) return;
-    final db = sl<AppDatabase>();
+    final db = sl<db_core.AppDatabase>();
     final playlist = await db.isar.playlists.get(activePlaylistId);
     if (playlist == null) return;
 

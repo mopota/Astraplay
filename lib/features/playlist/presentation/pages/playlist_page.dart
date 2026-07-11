@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../domain/entities/playlist.entity.dart';
 import '../bloc/playlist_bloc.dart';
+import '../../../../core/localization/app_localizations.dart';
 import '../../../settings/presentation/cubit/settings_cubit.dart';
 import 'dart:async';
 
@@ -45,12 +46,21 @@ class _PlaylistPageState extends State<PlaylistPage> with SingleTickerProviderSt
               ),
             );
           }
+          if (state.operationSuccess) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(context.tr('save_success')),
+                backgroundColor: Colors.green,
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+          }
         },
         child: NestedScrollView(
           headerSliverBuilder: (context, innerBoxIsScrolled) => [
             SliverAppBar.large(
               title: Text(
-                'Select Source',
+                context.tr('select_source'),
                 style: GoogleFonts.poppins(fontWeight: FontWeight.w800),
               ),
               centerTitle: false,
@@ -71,9 +81,9 @@ class _PlaylistPageState extends State<PlaylistPage> with SingleTickerProviderSt
                 indicatorSize: TabBarIndicatorSize.label,
                 labelStyle: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 14),
                 unselectedLabelStyle: GoogleFonts.poppins(fontWeight: FontWeight.w500, fontSize: 14),
-                tabs: const [
-                  Tab(text: 'Playlists'),
-                  Tab(text: 'Direct Streams'),
+                tabs: [
+                  Tab(text: context.tr('playlists')),
+                  Tab(text: context.tr('direct_streams')),
                 ],
               ),
             ),
@@ -90,7 +100,7 @@ class _PlaylistPageState extends State<PlaylistPage> with SingleTickerProviderSt
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => context.push('/add-source'),
         icon: const Icon(Icons.add_rounded),
-        label: const Text('Add New'),
+        label: Text(context.tr('add_new')),
       ),
     );
   }
@@ -139,7 +149,7 @@ class _PlaylistPageState extends State<PlaylistPage> with SingleTickerProviderSt
           ),
           const SizedBox(height: 24),
           Text(
-            isDirect ? 'No direct streams' : 'No playlists added',
+            isDirect ? context.tr('no_direct_streams') : context.tr('no_playlists'),
             style: GoogleFonts.poppins(
               fontSize: 20,
               fontWeight: FontWeight.w700,
@@ -147,14 +157,14 @@ class _PlaylistPageState extends State<PlaylistPage> with SingleTickerProviderSt
           ),
           const SizedBox(height: 8),
           Text(
-            isDirect ? 'Add a direct link to watch instantly' : 'Add an M3U or Xtream source',
+            isDirect ? context.tr('direct_stream_desc') : context.tr('playlist_desc'),
             style: TextStyle(color: colorScheme.onSurfaceVariant),
           ),
           const SizedBox(height: 32),
           FilledButton.icon(
             onPressed: () => context.push('/add-source'),
             icon: const Icon(Icons.add_rounded),
-            label: const Text('ADD NOW'),
+            label: Text(context.tr('add_now')),
           ),
         ],
       ),
@@ -330,7 +340,7 @@ class _PlaylistCard extends StatelessWidget {
             ),
             ListTile(
               leading: const Icon(Icons.edit_outlined),
-              title: const Text('Edit Details'),
+              title: Text(context.tr('edit_details')),
               onTap: () {
                 Navigator.pop(context);
                 _showEditDialog(context);
@@ -339,7 +349,7 @@ class _PlaylistCard extends StatelessWidget {
             if (playlist.type != 'directStream')
               ListTile(
                 leading: const Icon(Icons.refresh_rounded),
-                title: const Text('Sync Content'),
+                title: Text(context.tr('sync_content')),
                 onTap: () {
                   Navigator.pop(context);
                   context.read<PlaylistBloc>().add(RefreshPlaylistEvent(id: playlist.id));
@@ -347,7 +357,7 @@ class _PlaylistCard extends StatelessWidget {
               ),
             ListTile(
               leading: const Icon(Icons.delete_outline_rounded, color: Colors.red),
-              title: const Text('Delete Source', style: TextStyle(color: Colors.red)),
+              title: Text(context.tr('delete_source'), style: const TextStyle(color: Colors.red)),
               onTap: () {
                 Navigator.pop(context);
                 _showDeleteDialog(context);
@@ -365,54 +375,97 @@ class _PlaylistCard extends StatelessWidget {
     final urlController = TextEditingController(text: playlist.url);
     final userController = TextEditingController(text: playlist.username);
     final passController = TextEditingController(text: playlist.password);
-    final isXtream = playlist.type == 'xtream';
+    final isXtream = playlist.type == 'xtream' || (playlist.username != null && playlist.password != null);
+    
+    final bloc = context.read<PlaylistBloc>();
 
     showDialog(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Edit Source'),
-        content: SingleChildScrollView(
+      builder: (dialogContext) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(32)),
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              TextField(
-                controller: nameController,
-                decoration: const InputDecoration(labelText: 'Name'),
+              Text(
+                context.tr('edit_source'),
+                style: GoogleFonts.poppins(fontSize: 24, fontWeight: FontWeight.bold),
               ),
-              if (playlist.type != 'm3uFile')
-                TextField(
-                  controller: urlController,
-                  decoration: InputDecoration(labelText: isXtream ? 'Server URL' : 'URL'),
+              const SizedBox(height: 24),
+              Flexible(
+                child: SingleChildScrollView(
+                  child: Column(
+                    children: [
+                      _buildEditField(nameController, context.tr('name'), Icons.label_outline_rounded),
+                      if (playlist.type != 'm3uFile') ...[
+                        const SizedBox(height: 12),
+                        _buildEditField(urlController, isXtream ? context.tr('server_url') : context.tr('url'), Icons.link_rounded),
+                      ],
+                      if (isXtream) ...[
+                        const SizedBox(height: 12),
+                        _buildEditField(userController, context.tr('username'), Icons.person_outline_rounded),
+                        const SizedBox(height: 12),
+                        _buildEditField(passController, context.tr('password'), Icons.lock_outline_rounded, isPassword: true),
+                      ],
+                    ],
+                  ),
                 ),
-              if (isXtream) ...[
-                TextField(
-                  controller: userController,
-                  decoration: const InputDecoration(labelText: 'Username'),
-                ),
-                TextField(
-                  controller: passController,
-                  decoration: const InputDecoration(labelText: 'Password'),
-                ),
-              ],
+              ),
+              const SizedBox(height: 32),
+              Row(
+                children: [
+                  Expanded(
+                    flex: 2,
+                    child: FilledButton(
+                      style: FilledButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      ),
+                      onPressed: () {
+                        if (nameController.text.trim().isEmpty) return;
+                        
+                        bloc.add(UpdatePlaylistEvent(
+                          id: playlist.id,
+                          name: nameController.text.trim(),
+                          url: urlController.text.trim().isNotEmpty ? urlController.text.trim() : null,
+                          username: userController.text.trim().isNotEmpty ? userController.text.trim() : null,
+                          password: passController.text.trim().isNotEmpty ? passController.text.trim() : null,
+                        ));
+                        Navigator.pop(dialogContext);
+                      },
+                      child: Text(context.tr('save_changes'), style: const TextStyle(fontWeight: FontWeight.bold)),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: TextButton(
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                      ),
+                      onPressed: () => Navigator.pop(dialogContext),
+                      child: Text(context.tr('cancel')),
+                    ),
+                  ),
+                ],
+              ),
             ],
           ),
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
-          FilledButton(
-            onPressed: () {
-              context.read<PlaylistBloc>().add(UpdatePlaylistEvent(
-                id: playlist.id,
-                name: nameController.text,
-                url: urlController.text.isNotEmpty ? urlController.text : null,
-                username: userController.text.isNotEmpty ? userController.text : null,
-                password: passController.text.isNotEmpty ? passController.text : null,
-              ));
-              Navigator.pop(dialogContext);
-            },
-            child: const Text('Save Changes'),
-          ),
-        ],
+      ),
+    );
+  }
+
+  Widget _buildEditField(TextEditingController controller, String label, IconData icon, {bool isPassword = false}) {
+    return TextField(
+      controller: controller,
+      obscureText: isPassword,
+      decoration: InputDecoration(
+        labelText: label,
+        prefixIcon: Icon(icon, size: 20),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+        filled: true,
+        fillColor: Colors.transparent,
       ),
     );
   }
@@ -424,10 +477,10 @@ class _PlaylistCard extends StatelessWidget {
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Delete?'),
-        content: Text('Remove "${playlist.name}"?'),
+        title: Text(context.tr('delete_confirm')),
+        content: Text('${context.tr('remove')} "${playlist.name}"?'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(dialogContext), child: Text(context.tr('cancel'))),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error),
             onPressed: () async {
@@ -437,7 +490,7 @@ class _PlaylistCard extends StatelessWidget {
               bloc.add(DeletePlaylistEvent(id: playlist.id));
               if (dialogContext.mounted) Navigator.pop(dialogContext);
             },
-            child: const Text('Delete'),
+            child: Text(context.tr('delete')),
           ),
         ],
       ),

@@ -14,6 +14,8 @@ class NativeVideoPlayer extends StatefulWidget {
   final String title;
   final Map<String, String>? headers;
   final void Function(NativePlayerController controller)? onCreated;
+  final bool hardwareAcceleration;
+  final int bufferMs;
 
   const NativeVideoPlayer({
     super.key,
@@ -21,6 +23,8 @@ class NativeVideoPlayer extends StatefulWidget {
     required this.title,
     this.headers,
     this.onCreated,
+    this.hardwareAcceleration = true,
+    this.bufferMs = 5000,
   });
 
   @override
@@ -78,6 +82,14 @@ class _NativeVideoPlayerState extends State<NativeVideoPlayer> {
   }
 
   @override
+  void didUpdateWidget(NativeVideoPlayer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.url != oldWidget.url && _controller != null) {
+      _controller!.play(widget.url, headers: widget.headers);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     if (_isWebMode) {
       return Stack(
@@ -95,6 +107,8 @@ class _NativeVideoPlayerState extends State<NativeVideoPlayer> {
       'url': widget.url,
       'title': widget.title,
       'headers': widget.headers,
+      'hardwareAcceleration': widget.hardwareAcceleration,
+      'bufferMs': widget.bufferMs,
     };
 
     if (Platform.isAndroid) {
@@ -173,6 +187,8 @@ class NativePlayerController extends ChangeNotifier {
   Map<String, dynamic> tracks = {'video': [], 'audio': [], 'subtitles': []};
   String? error;
   bool isInPiP = false;
+  bool isCasting = false;
+  bool isCastAvailable = false;
 
   DateTime? _lastSeekTime;
   Timer? _webProgressTimer;
@@ -223,6 +239,14 @@ class NativePlayerController extends ChangeNotifier {
     switch (call.method) {
       case 'onPiPModeChanged':
         isInPiP = call.arguments['isInPiP'];
+        notifyListeners();
+        break;
+      case 'onCastStateChanged':
+        isCasting = call.arguments['isCasting'];
+        notifyListeners();
+        break;
+      case 'onCastAvailabilityChanged':
+        isCastAvailable = call.arguments['available'];
         notifyListeners();
         break;
       case 'onPlaybackStateChanged':
@@ -381,6 +405,18 @@ class NativePlayerController extends ChangeNotifier {
   Future<void> setBrightness(double brightness) async {
     if (id != -1) {
       await _channel.invokeMethod('setBrightness', {'brightness': brightness});
+    }
+  }
+
+  Future<void> openExternalPlayer({String? url}) async {
+    if (id != -1) {
+      await _channel.invokeMethod('openExternal', {'url': url});
+    }
+  }
+
+  Future<void> showCastDialog() async {
+    if (id != -1) {
+      await _channel.invokeMethod('showCastDialog');
     }
   }
 

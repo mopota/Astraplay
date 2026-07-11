@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import '../../../../core/localization/app_localizations.dart';
+import '../../../../core/presentation/widgets/progress_button.dart';
 import '../../../playlist/presentation/bloc/playlist_bloc.dart';
 
 class XtreamLoginPage extends StatefulWidget {
@@ -26,18 +28,18 @@ class _XtreamLoginPageState extends State<XtreamLoginPage> {
         if (state.operationSuccess) {
           context.go('/playlists');
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Xtream source added successfully')),
+            SnackBar(content: Text(context.tr('xtream_success'))),
           );
         }
         if (state.error != null) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error: ${state.error}')),
+            SnackBar(content: Text('${context.tr('error')}: ${state.error}')),
           );
         }
       },
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Xtream Login', style: TextStyle(fontWeight: FontWeight.bold)),
+          title: Text(context.tr('xtream_login'), style: const TextStyle(fontWeight: FontWeight.bold)),
           centerTitle: true,
         ),
         body: SingleChildScrollView(
@@ -54,38 +56,32 @@ class _XtreamLoginPageState extends State<XtreamLoginPage> {
                 child: Icon(Icons.cloud_sync_rounded, size: 48, color: colorScheme.primary),
               ).animate().scale(duration: 500.ms),
               const SizedBox(height: 24),
-              const Text(
-                'Enter Provider Details',
-                style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800),
+              Text(
+                context.tr('enter_details'),
+                style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 8),
               Text(
-                'Connect to your Xtream Codes API provider',
+                context.tr('xtream_login_desc'),
                 style: TextStyle(color: colorScheme.outline, fontSize: 14),
               ),
               const SizedBox(height: 48),
-              _buildField(_nameController, 'Profile Name', Icons.badge_outlined, 'e.g. My Provider'),
+              _buildField(_nameController, context.tr('profile_name'), Icons.badge_outlined, 'e.g. My Provider'),
               const SizedBox(height: 16),
-              _buildField(_urlController, 'Server URL', Icons.dns_outlined, 'http://server.com:8080'),
+              _buildField(_urlController, context.tr('server_url'), Icons.dns_outlined, 'http://server.com:8080'),
               const SizedBox(height: 16),
-              _buildField(_userController, 'Username', Icons.person_outline_rounded, 'Your username'),
+              _buildField(_userController, context.tr('username'), Icons.person_outline_rounded, 'Your username'),
               const SizedBox(height: 16),
-              _buildField(_passController, 'Password', Icons.lock_outline_rounded, 'Your password', isPassword: true),
+              _buildField(_passController, context.tr('password'), Icons.lock_outline_rounded, 'Your password', isPassword: true),
               const SizedBox(height: 48),
               BlocBuilder<PlaylistBloc, PlaylistState>(
                 builder: (context, state) {
-                  return SizedBox(
-                    width: double.infinity,
-                    child: FilledButton(
-                      onPressed: state.isLoading ? null : _login,
-                      style: FilledButton.styleFrom(
-                        padding: const EdgeInsets.all(20),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                      ),
-                      child: state.isLoading 
-                        ? const SizedBox(height: 24, width: 24, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                        : const Text('AUTHENTICATE & IMPORT', style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 1.2)),
-                    ),
+                  return ProgressButton(
+                    isLoading: state.isLoading,
+                    progress: state.progress,
+                    statusMessage: state.statusMessage,
+                    label: context.tr('authenticate_import'),
+                    onPressed: _login,
                   );
                 },
               ),
@@ -129,7 +125,7 @@ class _XtreamLoginPageState extends State<XtreamLoginPage> {
         _userController.text.isEmpty || 
         _passController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please fill all fields')),
+        SnackBar(content: Text(context.tr('fill_all_fields'))),
       );
       return;
     }

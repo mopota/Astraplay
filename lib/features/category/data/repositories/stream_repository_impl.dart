@@ -1,6 +1,5 @@
-import 'dart:convert';
 import 'package:dartz/dartz.dart';
-import 'package:isar_community/isar.dart';
+import 'package:flutter/foundation.dart';
 import '../../../../core/database/app_database.dart';
 import '../../../../core/errors/failures.dart';
 import '../../domain/repositories/stream_repository.dart';
@@ -20,92 +19,28 @@ class StreamRepositoryImpl implements StreamRepository {
 
   @override
   Stream<Either<Failure, List<AppStream>>> getStreams(int playlistId, String category, StreamType type) async* {
+    final stopwatch = Stopwatch()..start();
     final cacheKey = '${playlistId}_${category}_${type.name}';
     
-    // 1. Send from Memory Cache first if available (Instant)
     if (_cache.containsKey(cacheKey)) {
+      debugPrint('[Profiling] getStreams Cache Hit: ${stopwatch.elapsedMilliseconds}ms');
       yield Right(_cache[cacheKey]!);
     }
 
     try {
       final playlist = await database.isar.playlists.get(playlistId);
       if (playlist == null) {
-        yield Left(DatabaseFailure('Playlist not found'));
+        yield const Left(DatabaseFailure('Playlist not found'));
         return;
       }
+      debugPrint('[Profiling] getStreams Playlist Fetch: ${stopwatch.elapsedMilliseconds}ms');
 
-      List<AppStream> streams = [];
-
-      if (playlist.type == PlaylistType.xtream) {
-        // 2. FETCH FROM SERVER & EMIT IN CHUNKS
-        final url = playlist.info.serverUrl ?? '';
-        final user = playlist.info.username ?? '';
-        final pass = playlist.info.password ?? '';
-        
-        // Find category ID
-        final cat = await database.isar.streamCategorys
-            .filter()
-            .playlistIdEqualTo(playlist.id)
-            .nameEqualTo(category)
-            .streamTypeEqualTo(type)
-            .findFirst();
-        
-        if (cat == null) {
-          yield const Right([]);
-          return;
-        }
-
-        String action = type == StreamType.live ? 'get_live_streams' : (type == StreamType.movie ? 'get_vod_streams' : 'get_series');
-        final rawData = await remoteDataSource.getXtreamData(url, user, pass, action);
-        
-        // Fetch all saved streams for this playlist and type (favorites and history items)
-        final savedStreams = await database.isar.appStreams
-            .filter()
-            .playlistIdEqualTo(playlistId)
-            .streamTypeEqualTo(type)
-            .findAll();
-        final savedStreamsMap = {for (var s in savedStreams) s.data.xtreamId: s};
-
-        int processedCount = 0;
-        for (var s in rawData) {
-          if (s['category_id']?.toString() == cat.categoryId) {
-            final xtreamId = s['stream_id']?.toString() ?? s['series_id']?.toString();
-            final stream = AppStream()
-              ..playlistId = playlist.id
-              ..categoryName = category
-              ..name = s['name']?.toString() ?? 'Unknown'
-              ..streamType = type
-              ..data = (StreamData()
-                ..logoUrl = s['stream_icon']?.toString() ?? s['cover']?.toString()
-                ..xtreamId = xtreamId);
-                
-            if (type == StreamType.live) stream.data.streamUrl = '$url/live/$user/$pass/${s['stream_id']}.ts';
-            else if (type == StreamType.movie) {
-              stream.data.streamUrl = '$url/movie/$user/$pass/${s['stream_id']}.${s['container_extension'] ?? 'mp4'}';
-              stream.data.metadata = jsonEncode(s);
-            } else stream.data.metadata = jsonEncode(s);
-
-            if (savedStreamsMap.containsKey(xtreamId)) {
-              final saved = savedStreamsMap[xtreamId]!;
-              stream.isFavorite = saved.isFavorite;
-              stream.id = saved.id;
-            }
-
-            streams.add(stream);
-            processedCount++;
-
-            // Yield first 20 items immediately for instant UI
-            if (processedCount == 20) {
-              yield Right(List.from(streams));
-            }
-          }
-        }
-      } else {
-        streams = await database.getStreamsByCategory(playlistId, category, type);
-      }
+      final List<AppStream> streams = await database.getStreamsByCategory(playlistId, category, type);
+      debugPrint('[Profiling] getStreams DB Fetch (${streams.length} items): ${stopwatch.elapsedMilliseconds}ms');
 
       _cache[cacheKey] = streams;
       yield Right(streams);
+      debugPrint('[Profiling] getStreams Total: ${stopwatch.elapsedMilliseconds}ms');
     } catch (e) {
       yield Left(DatabaseFailure(e.toString()));
     }

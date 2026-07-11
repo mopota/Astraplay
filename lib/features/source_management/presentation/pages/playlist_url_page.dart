@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import '../../../../core/localization/app_localizations.dart';
+import '../../../../core/presentation/widgets/progress_button.dart';
 import '../../../playlist/presentation/bloc/playlist_bloc.dart';
 
 class PlaylistUrlPage extends StatefulWidget {
@@ -21,31 +23,31 @@ class _PlaylistUrlPageState extends State<PlaylistUrlPage> {
         if (state.operationSuccess) {
           context.go('/playlists');
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Playlist imported successfully')),
+            SnackBar(content: Text(context.tr('playlist_success'))),
           );
         }
         if (state.error != null) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error: ${state.error}')),
+            SnackBar(content: Text('${context.tr('error')}: ${state.error}')),
           );
         }
       },
       child: Scaffold(
-        appBar: AppBar(title: const Text('Add M3U Playlist')),
+        appBar: AppBar(title: Text(context.tr('add_m3u_playlist'))),
         body: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Import Remote Playlist',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              Text(
+                context.tr('import_remote_playlist'),
+                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 24),
               TextField(
                 controller: _nameController,
                 decoration: InputDecoration(
-                  labelText: 'Playlist Name',
+                  labelText: context.tr('playlist_name'),
                   prefixIcon: const Icon(Icons.drive_file_rename_outline_rounded),
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
                 ),
@@ -54,7 +56,7 @@ class _PlaylistUrlPageState extends State<PlaylistUrlPage> {
               TextField(
                 controller: _urlController,
                 decoration: InputDecoration(
-                  labelText: 'M3U URL',
+                  labelText: context.tr('m3u_url_label'),
                   hintText: 'http://example.com/playlist.m3u',
                   prefixIcon: const Icon(Icons.cloud_download_rounded),
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
@@ -63,25 +65,19 @@ class _PlaylistUrlPageState extends State<PlaylistUrlPage> {
               const SizedBox(height: 32),
               BlocBuilder<PlaylistBloc, PlaylistState>(
                 builder: (context, state) {
-                  return SizedBox(
-                    width: double.infinity,
-                    child: FilledButton(
-                      onPressed: state.isLoading ? null : _importPlaylist,
-                      style: FilledButton.styleFrom(
-                        padding: const EdgeInsets.all(16),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                      ),
-                      child: state.isLoading 
-                        ? const CircularProgressIndicator(color: Colors.white)
-                        : const Text('Import Playlist'),
-                    ),
+                  return ProgressButton(
+                    isLoading: state.isLoading,
+                    progress: state.progress,
+                    statusMessage: state.statusMessage,
+                    label: context.tr('import_playlist'),
+                    onPressed: _importPlaylist,
                   );
                 },
               ),
               const SizedBox(height: 24),
-              const Text(
-                'Note: Large playlists may take a few seconds to parse and save to your device.',
-                style: TextStyle(fontSize: 12, color: Colors.grey),
+              Text(
+                context.tr('import_note'),
+                style: const TextStyle(fontSize: 12, color: Colors.grey),
               ),
             ],
           ),
@@ -93,7 +89,7 @@ class _PlaylistUrlPageState extends State<PlaylistUrlPage> {
   void _importPlaylist() {
     if (_nameController.text.isEmpty || _urlController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please fill all fields')),
+        SnackBar(content: Text(context.tr('fill_all_fields'))),
       );
       return;
     }

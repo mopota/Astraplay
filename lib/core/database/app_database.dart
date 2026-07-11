@@ -1,33 +1,21 @@
 import 'package:isar_community/isar.dart';
 import 'package:path_provider/path_provider.dart';
+import 'dart:async';
 
 part 'app_database.g.dart';
 
-enum PlaylistType {
-  m3uUrl,
-  m3uFile,
-  xtream,
-  directStream,
-}
-
-enum StreamType {
-  live,
-  movie,
-  series,
-}
+enum PlaylistType { m3uUrl, m3uFile, xtream, directStream }
+enum StreamType { live, movie, series }
 
 @Collection()
 class StreamCategory {
   Id id = Isar.autoIncrement;
 
-  @Index()
+  @Index(composite: [CompositeIndex('streamType'), CompositeIndex('name')])
   int playlistId = 0;
 
-  @Index()
   late String name;
-
-  @Index()
-  late String categoryId; // ID from provider (Xtream)
+  late String categoryId;
 
   @Enumerated(EnumType.name)
   late StreamType streamType;
@@ -46,7 +34,6 @@ class Playlist {
   late PlaylistType type;
 
   late PlaylistInfo info;
-
   DateTime? lastRefresh;
 }
 
@@ -75,6 +62,7 @@ class AppStream {
   @Index(type: IndexType.value, caseSensitive: false)
   late String name;
 
+  @Index(composite: [CompositeIndex('playlistId'), CompositeIndex('categoryName')])
   @Enumerated(EnumType.name)
   late StreamType streamType;
   
@@ -83,48 +71,45 @@ class AppStream {
   @Index()
   bool isFavorite = false;
 
-  @Index()
-  int? favoriteFolderId;
+  @Index(unique: true, replace: true)
+  late String businessKey; // Unique identifier (Xtream ID or M3U URL)
 }
 
 @Embedded()
 class StreamData {
-  late String streamUrl;
+  String? streamUrl;
   String? logoUrl;
   String? xtreamId;
-  String? metadata; // JSON metadata
-  String? headersJson; // Headers as JSON string
+  String? headersJson;
+  StreamMetadata? metadata;
 }
 
-@Collection()
-class FavoriteFolder {
-  Id id = Isar.autoIncrement;
-
-  @Index(unique: true)
-  late String name;
-
-  late String iconName;
+@Embedded()
+class StreamMetadata {
+  String? plot;
+  String? rating;
+  String? year;
+  String? director;
+  String? cast;
+  String? genre;
+  String? duration;
+  String? releaseDate;
+  String? lastModified;
+  String? extension;
 }
 
 @Collection()
 class EpgProgram {
   Id id = Isar.autoIncrement;
 
-  @Index()
+  @Index(composite: [CompositeIndex('playlistId'), CompositeIndex('startTime')])
   late String channelId;
 
-  @Index()
   late String title;
-
   String? description;
 
-  @Index()
   late DateTime startTime;
-
-  @Index()
   late DateTime endTime;
-
-  @Index()
   int playlistId = 0;
 }
 
@@ -138,8 +123,7 @@ class HistoryRecord {
   @Index()
   int playlistId = 0;
 
-  String? episodeMetadata; // JSON for Xtream episode info (url, title, etc)
-
+  String? episodeMetadata; 
   int lastPosition = 0;
   int totalDuration = 0;
   
@@ -150,11 +134,10 @@ class HistoryRecord {
 @Collection()
 class AppSettings {
   Id id = Isar.autoIncrement;
-
   int? activePlaylistId;
   String themeMode = 'system';
   bool useNativePlayer = true;
-  String language = 'ar'; // Default to Arabic as requested
+  String language = 'ar';
   bool hardwareAcceleration = true;
   int bufferMs = 5000;
   String? pinCode;
@@ -165,10 +148,8 @@ class AppSettings {
 @Collection()
 class SearchHistory {
   Id id = Isar.autoIncrement;
-
   @Index(unique: true, replace: true)
   late String query;
-
   DateTime timestamp = DateTime.now();
 }
 
@@ -180,7 +161,6 @@ class AppDatabase {
       isar = Isar.getInstance()!;
       return;
     }
-
     final dir = await getApplicationDocumentsDirectory();
     isar = await Isar.open(
       [
@@ -190,15 +170,21 @@ class AppDatabase {
         HistoryRecordSchema,
         AppSettingsSchema,
         SearchHistorySchema,
-        FavoriteFolderSchema,
         EpgProgramSchema,
       ],
       directory: dir.path,
       inspector: false,
     );
+    unawaited(clearOldEpg());
   }
 
-  // Helper methods
+  Future<void> clearOldEpg() async {
+    final threshold = DateTime.now().subtract(const Duration(days: 1));
+    await isar.writeTxn(() => isar.epgPrograms.filter().endTimeLessThan(threshold).deleteAll());
+  }
+
+  // --- Optimized Helper Methods ---
+
   Future<List<Playlist>> getAllPlaylists() => isar.playlists.where().findAll();
 
   Future<void> savePlaylist(Playlist playlist) async {
@@ -207,7 +193,6 @@ class AppDatabase {
 
   Future<void> deletePlaylist(int id) async {
     await isar.writeTxn(() async {
-      // Get all stream IDs for this playlist to delete their history
       final streamIds = await isar.appStreams
           .filter()
           .playlistIdEqualTo(id)
@@ -229,18 +214,15 @@ class AppDatabase {
   }
 
   Future<void> saveEpgPrograms(List<EpgProgram> programs) async {
-    await isar.writeTxn(() async {
-      await isar.epgPrograms.putAll(programs);
-    });
+    await isar.writeTxn(() => isar.epgPrograms.putAll(programs));
   }
 
-  Future<List<AppStream>> getStreamsByCategory(
-      int playlistId, String category, StreamType type) {
+  Future<List<AppStream>> getStreamsByCategory(int playlistId, String category, StreamType type) {
     return isar.appStreams
         .filter()
         .playlistIdEqualTo(playlistId)
-        .categoryNameEqualTo(category)
         .streamTypeEqualTo(type)
+        .categoryNameEqualTo(category)
         .findAll();
   }
 
@@ -248,11 +230,12 @@ class AppDatabase {
     return isar.appStreams.filter().playlistIdEqualTo(pId).isFavoriteEqualTo(true).findAll();
   }
 
-  Future<List<HistoryRecord>> getHistoryByPlaylist(int pId) {
+  Future<List<HistoryRecord>> getRecentUniqueHistory(int pId, {int limit = 20}) {
     return isar.historyRecords
         .filter()
         .playlistIdEqualTo(pId)
         .sortByLastWatchedDesc()
+        .limit(limit)
         .findAll();
   }
 
@@ -266,53 +249,46 @@ class AppDatabase {
   }
 
   Future<AppStream> _ensureStreamInDb(AppStream stream) async {
-    if (stream.id != 0) {
+    if (stream.id != 0 && stream.id != Isar.autoIncrement) {
       final existing = await isar.appStreams.get(stream.id);
       if (existing != null) return existing;
     }
     
-    // If not found by ID, try finding by xtreamId if applicable
-    if (stream.data.xtreamId != null) {
-      final existing = await isar.appStreams.filter()
-          .playlistIdEqualTo(stream.playlistId)
-          .data((q) => q.xtreamIdEqualTo(stream.data.xtreamId))
-          .findFirst();
-      if (existing != null) return existing;
-    } else {
-      // Try by name and category (for M3U if somehow not found by ID)
-      final existing = await isar.appStreams.filter()
-          .playlistIdEqualTo(stream.playlistId)
-          .nameEqualTo(stream.name)
-          .categoryNameEqualTo(stream.categoryName)
-          .findFirst();
-      if (existing != null) return existing;
+    final existing = await isar.appStreams.filter()
+        .businessKeyEqualTo(stream.businessKey)
+        .findFirst();
+
+    if (existing != null) {
+      stream.id = existing.id;
+      return existing;
     }
 
-    // Save it if not found
-    final id = await isar.appStreams.put(stream);
+    final id = await isar.writeTxn(() => isar.appStreams.put(stream));
     stream.id = id;
     return stream;
   }
 
   Future<AppStream> toggleFavorite(AppStream stream) async {
+    final dbStream = await _ensureStreamInDb(stream);
     return await isar.writeTxn(() async {
-      final dbStream = await _ensureStreamInDb(stream);
+      final latest = await isar.appStreams.get(dbStream.id);
+      if (latest != null) {
+        latest.isFavorite = !latest.isFavorite;
+        await isar.appStreams.put(latest);
+        return latest;
+      }
       dbStream.isFavorite = !dbStream.isFavorite;
       await isar.appStreams.put(dbStream);
       return dbStream;
     });
   }
 
-  Future<List<AppStream>> getFavorites() {
-    return isar.appStreams.filter().isFavoriteEqualTo(true).findAll();
-  }
-
   Future<void> addToHistory(AppStream stream, {int position = 0, int duration = 0, String? episodeMetadata}) async {
+    final dbStream = await _ensureStreamInDb(stream);
+    final streamId = dbStream.id;
+    final pId = dbStream.playlistId;
+
     await isar.writeTxn(() async {
-      final dbStream = await _ensureStreamInDb(stream);
-      final streamId = dbStream.id;
-      final pId = dbStream.playlistId;
-      
       final query = isar.historyRecords.filter().streamIdEqualTo(streamId);
       final existing = episodeMetadata != null 
           ? await query.episodeMetadataEqualTo(episodeMetadata).findFirst()
@@ -345,7 +321,6 @@ class AppDatabase {
     return record?.lastPosition ?? 0;
   }
 
-  // EPG methods
   Future<EpgProgram?> getCurrentProgram(int pId, String channelId) async {
     final now = DateTime.now();
     return await isar.epgPrograms

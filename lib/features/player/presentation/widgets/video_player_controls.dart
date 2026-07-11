@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:share_plus/share_plus.dart';
 import '../../../../core/database/app_database.dart';
 import '../../../../core/utils/haptics_helper.dart';
 import '../../../../core/localization/app_localizations.dart';
@@ -12,27 +14,36 @@ import '../../../subtitles/presentation/widgets/subtitle_downloader_sheet.dart';
 import '../../../subtitles/presentation/widgets/subtitle_settings_sheet.dart';
 import 'native_video_player.dart';
 import 'channel_side_menu.dart';
+import 'episode_side_menu.dart';
 
 class VideoPlayerControls extends StatefulWidget {
   final NativePlayerController controller;
   final String title;
+  final String streamUrl;
   final VoidCallback onBack;
   final VoidCallback? onNext;
   final VoidCallback? onPrevious;
   final List<AppStream>? categoryStreams;
   final AppStream? currentStream;
   final Function(AppStream)? onStreamSelected;
+  final List<Map<String, String>>? playlist;
+  final int? initialIndex;
+  final Function(int)? onEpisodeSelected;
 
   const VideoPlayerControls({
     super.key,
     required this.controller,
     required this.title,
+    required this.streamUrl,
     required this.onBack,
     this.onNext,
     this.onPrevious,
     this.categoryStreams,
     this.currentStream,
     this.onStreamSelected,
+    this.playlist,
+    this.initialIndex,
+    this.onEpisodeSelected,
   });
 
   @override
@@ -236,25 +247,41 @@ class _VideoPlayerControlsState extends State<VideoPlayerControls> {
                 ],
               ),
             ),
-            if (_isSideMenuOpen && widget.categoryStreams != null && widget.currentStream != null)
+            if (_isSideMenuOpen && (widget.categoryStreams != null || widget.playlist != null))
               Positioned(
                 right: 0,
                 top: 0,
                 bottom: 0,
-                child: ChannelSideMenu(
-                  streams: widget.categoryStreams!,
-                  currentStream: widget.currentStream!,
-                  onStreamSelected: (s) {
-                    widget.onStreamSelected?.call(s);
-                    setState(() => _isSideMenuOpen = false);
-                  },
-                  onClose: () => setState(() => _isSideMenuOpen = false),
-                ).animate().slideX(begin: 1, end: 0, duration: 300.ms, curve: Curves.easeOutCubic),
+                child: _buildSideMenu(),
               ),
           ],
         );
       },
     );
+  }
+
+  Widget _buildSideMenu() {
+    if (widget.playlist != null) {
+      return EpisodeSideMenu(
+        episodes: widget.playlist!,
+        currentIndex: widget.initialIndex ?? 0,
+        onEpisodeSelected: (index) {
+          widget.onEpisodeSelected?.call(index);
+          setState(() => _isSideMenuOpen = false);
+        },
+        onClose: () => setState(() => _isSideMenuOpen = false),
+      ).animate().slideX(begin: 1, end: 0, duration: 300.ms, curve: Curves.easeOutCubic);
+    }
+    
+    return ChannelSideMenu(
+      streams: widget.categoryStreams!,
+      currentStream: widget.currentStream!,
+      onStreamSelected: (s) {
+        widget.onStreamSelected?.call(s);
+        setState(() => _isSideMenuOpen = false);
+      },
+      onClose: () => setState(() => _isSideMenuOpen = false),
+    ).animate().slideX(begin: 1, end: 0, duration: 300.ms, curve: Curves.easeOutCubic);
   }
 
   Widget _buildControlsBackground({required Widget child}) {
@@ -410,12 +437,23 @@ class _VideoPlayerControlsState extends State<VideoPlayerControls> {
               ],
             ),
           ),
+        IconButton(
+          icon: Icon(
+            widget.controller.isCasting ? Icons.cast_connected_rounded : Icons.cast_rounded,
+            color: widget.controller.isCasting ? Theme.of(context).colorScheme.primary : Colors.white,
+          ),
+          onPressed: () {
+             HapticsHelper.light();
+             widget.controller.showCastDialog();
+          },
+        ),
           IconButton(
-            icon: const Icon(Icons.cast_rounded, color: Colors.white),
+            icon: const Icon(Icons.copy_rounded, color: Colors.white),
             onPressed: () {
+              Clipboard.setData(ClipboardData(text: widget.streamUrl));
               HapticsHelper.light();
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Casting feature coming soon')),
+                SnackBar(content: Text(context.tr('url_copied')), duration: const Duration(seconds: 2)),
               );
             },
           ),
@@ -441,7 +479,7 @@ class _VideoPlayerControlsState extends State<VideoPlayerControls> {
     }
 
     return Text(
-      'Now: ${_currentProgram!.title}',
+      '${context.tr('now')}: ${_currentProgram!.title}',
       style: TextStyle(color: Theme.of(context).colorScheme.primary, fontSize: 11, fontWeight: FontWeight.bold),
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
@@ -452,111 +490,65 @@ class _VideoPlayerControlsState extends State<VideoPlayerControls> {
     final isPlaying = widget.controller.isPlaying;
     final isBuffering = widget.controller.playbackState == 'BUFFERING';
 
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        if (widget.onPrevious != null) ...[
-          _buildEpisodeButton(
-            icon: Icons.skip_previous_rounded,
-            label: context.tr('prev_episode'),
-            onTap: widget.onPrevious!,
-          ),
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          _buildSkipButton(Icons.replay_10_rounded, () {
+            widget.controller.seekTo(widget.controller.position - const Duration(seconds: 10));
+          }),
           const SizedBox(width: 24),
-        ],
-        _buildSkipButton(Icons.replay_10_rounded, () {
-          widget.controller.seekTo(widget.controller.position - const Duration(seconds: 10));
-        }),
-        const SizedBox(width: 32),
-        if (isBuffering)
-          SizedBox(
-            width: 50,
-            height: 50,
-            child: CircularProgressIndicator(
-              strokeWidth: 4,
-              color: Theme.of(context).colorScheme.primary,
-            ),
-          ).animate().scale().fadeIn()
-        else
-          Container(
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: Theme.of(context).colorScheme.primary.withAlpha(80),
-                  blurRadius: 30,
-                  spreadRadius: 5,
-                )
-              ],
-            ),
-            child: IconButton.filled(
-              onPressed: () {
-                HapticsHelper.medium();
-                if (isPlaying) {
-                  widget.controller.pause();
-                } else {
-                  widget.controller.resume();
-                }
-                _startHideTimer();
-              },
-              icon: Icon(isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded, size: 32),
-              style: IconButton.styleFrom(
-                padding: const EdgeInsets.all(16),
-                backgroundColor: Theme.of(context).colorScheme.primary,
-                foregroundColor: Theme.of(context).colorScheme.onPrimary,
+          if (isBuffering)
+            SizedBox(
+              width: 50,
+              height: 50,
+              child: CircularProgressIndicator(
+                strokeWidth: 4,
+                color: Theme.of(context).colorScheme.primary,
               ),
+            ).animate().scale().fadeIn()
+          else
+            Container(
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: Theme.of(context).colorScheme.primary.withAlpha(80),
+                    blurRadius: 30,
+                    spreadRadius: 5,
+                  )
+                ],
+              ),
+              child: IconButton.filled(
+                onPressed: () {
+                  HapticsHelper.medium();
+                  if (isPlaying) {
+                    widget.controller.pause();
+                  } else {
+                    widget.controller.resume();
+                  }
+                  _startHideTimer();
+                },
+                icon: Icon(isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded, size: 32),
+                style: IconButton.styleFrom(
+                  padding: const EdgeInsets.all(16),
+                  backgroundColor: Theme.of(context).colorScheme.primary,
+                  foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                ),
+              ),
+            ).animate(key: ValueKey(isPlaying)).scale(
+              duration: 200.ms,
+              curve: Curves.easeOutBack,
+              begin: const Offset(0.9, 0.9),
+              end: const Offset(1.0, 1.0),
             ),
-          ).animate(key: ValueKey(isPlaying)).scale(
-            duration: 200.ms,
-            curve: Curves.easeOutBack,
-            begin: const Offset(0.9, 0.9),
-            end: const Offset(1.0, 1.0),
-          ),
-        const SizedBox(width: 32),
-        _buildSkipButton(Icons.forward_10_rounded, () {
-          widget.controller.seekTo(widget.controller.position + const Duration(seconds: 10));
-        }),
-        if (widget.onNext != null) ...[
           const SizedBox(width: 24),
-          _buildEpisodeButton(
-            icon: Icons.skip_next_rounded,
-            label: context.tr('next_episode'),
-            onTap: widget.onNext!,
-          ),
+          _buildSkipButton(Icons.forward_10_rounded, () {
+            widget.controller.seekTo(widget.controller.position + const Duration(seconds: 10));
+          }),
         ],
-      ],
-    );
-  }
-
-  Widget _buildEpisodeButton({
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-  }) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        IconButton(
-          onPressed: () {
-            HapticsHelper.medium();
-            onTap();
-          },
-          icon: Icon(icon, size: 32, color: Colors.white),
-          style: IconButton.styleFrom(
-            backgroundColor: Colors.white10,
-            padding: const EdgeInsets.all(12),
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          label,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 10,
-            fontWeight: FontWeight.bold,
-            shadows: [Shadow(blurRadius: 4, color: Colors.black)],
-          ),
-        ),
-      ],
+      ),
     );
   }
 
@@ -610,23 +602,27 @@ class _VideoPlayerControlsState extends State<VideoPlayerControls> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                if (widget.categoryStreams != null)
-                  _buildBottomAction(Icons.list_rounded, 'Channels', () {
-                    HapticsHelper.light();
-                    setState(() {
-                      _isSideMenuOpen = true;
-                      _isVisible = false;
-                    });
-                  }),
-                _buildBottomAction(Icons.audiotrack_rounded, 'Audio', () => _showTrackSheet('Audio')),
-                _buildBottomAction(Icons.subtitles_rounded, 'Subs', _showSubtitleMenu),
-                _buildBottomAction(Icons.speed_rounded, 'Speed', _showSpeedSheet),
-                _buildBottomAction(Icons.aspect_ratio_rounded, 'Resize', _toggleAspectRatio),
-                _buildBottomAction(Icons.screen_rotation_rounded, 'Rotate', () {
+                if (widget.categoryStreams != null || widget.playlist != null)
+                  _buildBottomAction(
+                    widget.playlist != null ? Icons.video_library_rounded : Icons.list_rounded,
+                    widget.playlist != null ? context.tr('episodes') : context.tr('channels'),
+                    () {
+                      HapticsHelper.light();
+                      setState(() {
+                        _isSideMenuOpen = true;
+                        _isVisible = false;
+                      });
+                    },
+                  ),
+                _buildBottomAction(Icons.audiotrack_rounded, context.tr('audio'), () => _showTrackSheet(context.tr('audio'))),
+                _buildBottomAction(Icons.subtitles_rounded, context.tr('subs'), _showSubtitleMenu),
+                _buildBottomAction(Icons.speed_rounded, context.tr('speed'), _showSpeedSheet),
+                _buildBottomAction(Icons.aspect_ratio_rounded, context.tr('resize'), _toggleAspectRatio),
+                _buildBottomAction(Icons.screen_rotation_rounded, context.tr('rotate'), () {
                   HapticsHelper.light();
                   setState(() => widget.controller.toggleOrientation());
                 }),
-                _buildBottomAction(Icons.lock_outline_rounded, 'Lock', () {
+                _buildBottomAction(Icons.lock_outline_rounded, context.tr('lock'), () {
                   HapticsHelper.heavy();
                   setState(() {
                      _isLocked = true;
@@ -744,10 +740,13 @@ class _VideoPlayerControlsState extends State<VideoPlayerControls> {
 
   void _showSettingsSheet() {
     _showM3Sheet(
-      title: 'Playback Settings',
+      title: context.tr('playback_settings'),
       children: [
-        _buildSheetItem(Icons.high_quality_rounded, 'Video Quality', 'Auto', () => _showTrackSheet('Video')),
-        _buildSheetItem(Icons.rotate_90_degrees_cw_rounded, 'Rotate View', '90°', _toggleRotation),
+        _buildSheetItem(Icons.high_quality_rounded, context.tr('video_quality'), 'Auto', () => _showTrackSheet(context.tr('video'))),
+        _buildSheetItem(Icons.rotate_90_degrees_cw_rounded, context.tr('rotate_view'), '90°', _toggleRotation),
+        _buildSheetItem(Icons.share_rounded, context.tr('share_link'), 'External', () {
+          SharePlus.instance.share(ShareParams(text: widget.streamUrl));
+        }),
       ],
     );
   }
@@ -755,7 +754,7 @@ class _VideoPlayerControlsState extends State<VideoPlayerControls> {
   void _showSpeedSheet() {
     final speeds = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
     _showM3Sheet(
-      title: 'Playback Speed',
+      title: context.tr('playback_speed'),
       children: speeds.map((s) => ListTile(
         title: Text('${s}x', textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.bold)),
         onTap: () {
@@ -769,17 +768,17 @@ class _VideoPlayerControlsState extends State<VideoPlayerControls> {
 
   void _showSubtitleMenu() {
     _showM3Sheet(
-      title: 'Subtitles',
+      title: context.tr('subtitles'),
       children: [
-        _buildSheetItem(Icons.download_rounded, 'Download Subtitles', 'Online', _showSubtitleDownloader),
-        _buildSheetItem(Icons.settings_suggest_rounded, 'Subtitle Settings', 'Sync & Style', _showSubtitleSettings),
+        _buildSheetItem(Icons.download_rounded, context.tr('download_subtitles'), 'Online', _showSubtitleDownloader),
+        _buildSheetItem(Icons.settings_suggest_rounded, context.tr('subtitle_settings'), 'Sync & Style', _showSubtitleSettings),
         const Divider(indent: 16, endIndent: 16, color: Colors.white10),
         ListTile(
           leading: const Icon(Icons.list_rounded),
-          title: const Text('Embedded Subtitles'),
+          title: Text(context.tr('embedded_subtitles')),
           onTap: () {
             Navigator.pop(context);
-            _showTrackSheet('Subtitles');
+            _showTrackSheet(context.tr('subtitles'));
           },
         ),
       ],
@@ -798,7 +797,7 @@ class _VideoPlayerControlsState extends State<VideoPlayerControls> {
           onSubtitleSelected: (path) {
             widget.controller.setSubtitleSource(path);
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Subtitle applied successfully')),
+              SnackBar(content: Text(context.tr('subtitle_success'))),
             );
           },
         ),
@@ -816,16 +815,16 @@ class _VideoPlayerControlsState extends State<VideoPlayerControls> {
   }
 
   void _showTrackSheet(String type) {
-    final List tracksList = type == 'Audio' 
+    final List tracksList = type == context.tr('audio') 
         ? widget.controller.tracks['audio'] 
-        : (type == 'Video' ? widget.controller.tracks['video'] : widget.controller.tracks['subtitles']);
-    final int trackType = type == 'Audio' ? 1 : (type == 'Video' ? 2 : 3);
+        : (type == context.tr('video') ? widget.controller.tracks['video'] : widget.controller.tracks['subtitles']);
+    final int trackType = type == context.tr('audio') ? 1 : (type == context.tr('video') ? 2 : 3);
 
     _showM3Sheet(
-      title: 'Select $type',
+      title: '${context.tr('select')} $type',
       children: [
         ListTile(
-          title: const Text('Auto / Default'),
+          title: Text(context.tr('auto_default')),
           onTap: () {
             HapticsHelper.light();
             widget.controller.selectTrack(trackType, -1, -1);
@@ -853,11 +852,10 @@ class _VideoPlayerControlsState extends State<VideoPlayerControls> {
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (context) => Container(
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surface,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
-        ),
+      builder: (context) => Material(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+        clipBehavior: Clip.antiAlias,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -901,7 +899,7 @@ class _VideoPlayerControlsState extends State<VideoPlayerControls> {
     final modes = ['Fit', 'Fill', 'Zoom', 'Fixed Height', 'Fixed Width'];
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Aspect Ratio: ${modes[_aspectRatioMode]}'),
+        content: Text('${context.tr('aspect_ratio')}: ${modes[_aspectRatioMode]}'),
         behavior: SnackBarBehavior.floating,
         width: 200,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),

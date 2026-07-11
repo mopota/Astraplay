@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../features/home/presentation/pages/favorites_page.dart';
-import '../../features/home/presentation/pages/favorite_folders_page.dart';
 import '../../features/home/presentation/pages/home_page.dart';
 import '../../features/playlist/presentation/pages/playlist_page.dart';
 import '../../features/category/presentation/pages/category_page.dart';
@@ -73,12 +72,6 @@ class AppRouter {
               GoRoute(
                 path: 'favorites',
                 builder: (context, state) => const FavoritesPage(),
-                routes: [
-                  GoRoute(
-                    path: 'folders',
-                    builder: (context, state) => const FavoriteFoldersPage(),
-                  ),
-                ],
               ),
             ],
           ),

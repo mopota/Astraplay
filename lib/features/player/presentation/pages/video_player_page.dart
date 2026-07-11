@@ -1,13 +1,16 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
+import 'package:flutter/services.dart';
 import 'package:isar_community/isar.dart';
 import '../../../../core/database/app_database.dart';
-import '../../../../features/playlist/domain/repositories/playlist_repository.dart';
+import '../../../../features/settings/presentation/cubit/settings_cubit.dart';
 import '../../../../injection_container.dart';
+import '../../../../core/localization/app_localizations.dart';
+import '../../../playlist/domain/repositories/playlist_repository.dart';
 import '../widgets/native_video_player.dart';
 import '../widgets/video_player_controls.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 
 class VideoPlayerPage extends StatefulWidget {
   final String streamUrl;
@@ -64,15 +67,20 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
     _currentIndex = widget.initialIndex;
 
     WidgetsBinding.instance.addObserver(this);
-    _addToHistory();
-    _loadCategoryStreams();
-    _loadCurrentStream();
+    
+    _initPlayer();
+  }
+
+  Future<void> _initPlayer() async {
+    await _loadCurrentStream();
+    await _addToHistory();
+    await _loadCategoryStreams();
   }
 
   Future<void> _loadCurrentStream() async {
     if (widget.stream != null) {
       setState(() => _currentAppStream = widget.stream);
-      _fetchEpg();
+      await _fetchEpg();
       return;
     }
 
@@ -81,7 +89,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
       final stream = await db.isar.appStreams.get(widget.streamId!);
       if (mounted) {
         setState(() => _currentAppStream = stream);
-        _fetchEpg();
+        await _fetchEpg();
       }
     }
   }
@@ -91,7 +99,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
     final pId = _currentAppStream?.playlistId ?? widget.playlistId;
     
     if (streamId != null && pId != null) {
-      unawaited(sl<PlaylistRepository>().fetchEpg(pId, streamId));
+      await sl<PlaylistRepository>().fetchEpg(pId, streamId);
     }
   }
 
@@ -108,12 +116,12 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
     }
   }
 
-  void _addToHistory() {
+  Future<void> _addToHistory() async {
     if (_currentAppStream != null) {
-      unawaited(sl<AppDatabase>().addToHistory(
+      await sl<AppDatabase>().addToHistory(
         _currentAppStream!, 
         episodeMetadata: _currentMetadata,
-      ));
+      );
     }
   }
 
@@ -122,7 +130,15 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
     _savePosition();
     _retryTimer?.cancel();
     _controller?.removeListener(_onControllerChanged);
+    _controller?.dispose();
     WidgetsBinding.instance.removeObserver(this);
+
+    // Reset orientations to portrait when leaving the player
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+    ]);
+
     super.dispose();
   }
 
@@ -200,14 +216,14 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
       _currentMetadata = jsonEncode({
         'url': epUrl,
         'name': epName,
-        'episodeId': ep['id'],
-        'season': ep['season'],
+        'episodeId': ep['id'] ?? '',
+        'season': ep['season'] ?? '',
       });
     });
 
     if (_controller != null) {
       await _controller!.play(_currentUrl, headers: widget.headers);
-      _addToHistory();
+      await _addToHistory();
       
       final streamId = _currentAppStream?.id ?? widget.streamId;
       if (streamId != null) {
@@ -227,7 +243,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
     
     setState(() {
       _currentAppStream = stream;
-      _currentUrl = stream.data.streamUrl;
+      _currentUrl = stream.data.streamUrl ?? '';
       _currentTitle = stream.name;
       _currentMetadata = null;
     });
@@ -258,145 +274,131 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> with WidgetsBindingOb
   void _handleBack() {
     if (_isPopping) return;
     _isPopping = true;
+    
+    debugPrint('[Navigation] Manual back triggered, saving position and popping.');
     _savePosition();
+    
     if (mounted) {
-      context.pop();
+      // Use GoRouter context for a clean pop from the current location
+      Navigator.of(context).pop();
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return PopScope(
-      canPop: false,
+      canPop: false, // Disable system back to handle it manually
       onPopInvokedWithResult: (didPop, result) {
         if (didPop) return;
         _handleBack();
       },
-      child: Scaffold(
-        backgroundColor: Colors.black,
-        body: Stack(
-          children: [
-            Center(
-              child: NativeVideoPlayer(
-                url: _currentUrl,
-                title: _currentTitle,
-                headers: widget.headers,
-                onCreated: (controller) async {
-                  setState(() => _controller = controller);
-                  controller.addListener(_onControllerChanged);
-                  
-                  final streamId = _currentAppStream?.id ?? widget.streamId;
-                  if (streamId != null) {
-                    final lastPos = await sl<AppDatabase>().getLastPosition(
-                      streamId, 
-                      episodeMetadata: _currentMetadata,
-                    );
-                    if (lastPos > 0) {
-                      await controller.seekTo(Duration(milliseconds: lastPos));
-                    }
-                  }
-                },
-              ),
-            ),
-            if (_controller != null)
-              Positioned.fill(
-                child: ListenableBuilder(
-                  listenable: _controller!,
-                  builder: (context, _) {
-                    if (_controller!.isInPiP) return const SizedBox.shrink();
+      child: BlocBuilder<SettingsCubit, SettingsState>(
+        builder: (context, state) {
+          return Scaffold(
+          backgroundColor: Colors.black,
+          body: Stack(
+            children: [
+              Center(
+                child: NativeVideoPlayer(
+                  url: _currentUrl,
+                  title: _currentTitle,
+                  headers: widget.headers,
+                  hardwareAcceleration: state.settings.hardwareAcceleration,
+                  bufferMs: state.settings.bufferMs,
+                  onCreated: (controller) async {
+                    setState(() => _controller = controller);
+                    controller.addListener(_onControllerChanged);
                     
-                    final hasPlaylist = widget.playlist != null && widget.playlist!.isNotEmpty;
-                    final hasNext = hasPlaylist && _currentIndex != null && _currentIndex! < widget.playlist!.length - 1;
-                    final hasPrev = hasPlaylist && _currentIndex != null && _currentIndex! > 0;
-  
-                    return VideoPlayerControls(
-                      controller: _controller!,
-                      title: _currentTitle,
-                      onBack: _handleBack,
-                      onNext: hasNext ? () => _changeEpisode(_currentIndex! + 1) : null,
-                      onPrevious: hasPrev ? () => _changeEpisode(_currentIndex! - 1) : null,
-                      categoryStreams: _categoryStreams,
-                      currentStream: _currentAppStream,
-                      onStreamSelected: _switchStream,
-                    );
+                    final streamId = _currentAppStream?.id ?? widget.streamId;
+                    if (streamId != null) {
+                      final lastPos = await sl<AppDatabase>().getLastPosition(
+                        streamId, 
+                        episodeMetadata: _currentMetadata,
+                      );
+                      if (lastPos > 0) {
+                        await controller.seekTo(Duration(milliseconds: lastPos));
+                      }
+                    }
                   },
                 ),
               ),
-            if (_controller == null || _controller!.playbackState == 'IDLE' && !_isReconnecting)
-              Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const CircularProgressIndicator(color: Colors.red),
-                    const SizedBox(height: 24),
-                    Text(
-                      'Loading Stream...',
-                      style: TextStyle(color: Colors.white.withAlpha(150), fontSize: 14),
-                    ),
-                  ],
+              if (_controller != null)
+                Positioned.fill(
+                  child: ListenableBuilder(
+                    listenable: _controller!,
+                    builder: (context, _) {
+                      if (_controller!.isInPiP) return const SizedBox.shrink();
+                      
+                      final hasPlaylist = widget.playlist != null && widget.playlist!.isNotEmpty;
+                      final hasNext = hasPlaylist && _currentIndex != null && _currentIndex! < widget.playlist!.length - 1;
+                      final hasPrev = hasPlaylist && _currentIndex != null && _currentIndex! > 0;
+    
+                      return VideoPlayerControls(
+                        controller: _controller!,
+                        title: _currentTitle,
+                        streamUrl: _currentUrl,
+                        onBack: _handleBack,
+                        onNext: hasNext ? () => _changeEpisode(_currentIndex! + 1) : null,
+                        onPrevious: hasPrev ? () => _changeEpisode(_currentIndex! - 1) : null,
+                        categoryStreams: _categoryStreams,
+                        currentStream: _currentAppStream,
+                        onStreamSelected: _switchStream,
+                        playlist: widget.playlist,
+                        initialIndex: _currentIndex,
+                        onEpisodeSelected: _changeEpisode,
+                      );
+                    },
+                  ),
                 ),
-              ),
-            if (_controller?.error != null)
-              Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(32),
+              if (_controller == null || _controller!.playbackState == 'IDLE' && !_isReconnecting)
+                Center(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.error_outline_rounded, color: Colors.red, size: 64),
-                      const SizedBox(height: 16),
-                      Text(
-                        'Playback Error',
-                        style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        _controller!.error!,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(color: Colors.white.withAlpha(150)),
-                      ),
+                      const CircularProgressIndicator(color: Colors.red),
                       const SizedBox(height: 24),
-                      FilledButton(
-                        onPressed: () => _controller!.play(_currentUrl, headers: widget.headers),
-                        child: const Text('Try Again'),
+                      Text(
+                        context.tr('loading_stream'),
+                        style: TextStyle(color: Colors.white.withAlpha(150), fontSize: 14),
                       ),
                     ],
                   ),
                 ),
-              ),
-            if (_isReconnecting)
-              Positioned(
-                top: 100,
-                left: 0,
-                right: 0,
-                child: Center(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: Colors.black54,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                        ),
-                        const SizedBox(width: 12),
-                        Text(
-                          'Reconnecting... ($_retryCount/5)',
-                          style: const TextStyle(color: Colors.white, fontSize: 12),
-                        ),
-                      ],
+              if (_isReconnecting)
+                Positioned(
+                  top: 100,
+                  left: 0,
+                  right: 0,
+                  child: Center(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.black54,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          ),
+                          const SizedBox(width: 12),
+                          Text(
+                            '${context.tr('reconnecting')}... ($_retryCount/5)',
+                            style: const TextStyle(color: Colors.white, fontSize: 12),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
-              ),
-          ],
-        ),
-      ),
+            ],
+          ),
+        );
+      },
+     ),
     );
   }
 }

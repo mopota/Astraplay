@@ -13,21 +13,32 @@ class SubtitleInitial extends SubtitleState {}
 class SubtitleLoading extends SubtitleState {}
 class SubtitleSearchSuccess extends SubtitleState {
   final List<SubtitleSearchResult> results;
-  const SubtitleSearchSuccess(this.results);
+  final bool isDownloading;
+
+  const SubtitleSearchSuccess(this.results, {this.isDownloading = false});
+
   @override
-  List<Object?> get props => [results];
+  List<Object?> get props => [results, isDownloading];
 }
+
 class SubtitleDownloadSuccess extends SubtitleState {
   final String path;
-  const SubtitleDownloadSuccess(this.path);
+  final List<SubtitleSearchResult> results;
+
+  const SubtitleDownloadSuccess(this.path, this.results);
+
   @override
-  List<Object?> get props => [path];
+  List<Object?> get props => [path, results];
 }
+
 class SubtitleError extends SubtitleState {
   final String message;
-  const SubtitleError(this.message);
+  final List<SubtitleSearchResult> results;
+
+  const SubtitleError(this.message, {this.results = const []});
+
   @override
-  List<Object?> get props => [message];
+  List<Object?> get props => [message, results];
 }
 
 class SubtitleCubit extends Cubit<SubtitleState> {
@@ -35,27 +46,30 @@ class SubtitleCubit extends Cubit<SubtitleState> {
 
   SubtitleCubit(this._service) : super(SubtitleInitial());
 
+  List<SubtitleSearchResult> _lastResults = [];
+
   Future<void> search(String query, {String languages = 'ar,en'}) async {
     emit(SubtitleLoading());
     try {
       final results = await _service.searchSubtitles(query: query, languages: languages);
+      _lastResults = results;
       emit(SubtitleSearchSuccess(results));
     } catch (e) {
-      emit(SubtitleError(e.toString()));
+      emit(SubtitleError(e.toString(), results: _lastResults));
     }
   }
 
   Future<void> download(SubtitleSearchResult sub) async {
-    emit(SubtitleLoading());
+    emit(SubtitleSearchSuccess(_lastResults, isDownloading: true));
     try {
       final path = await _service.downloadSubtitle(sub);
       if (path != null) {
-        emit(SubtitleDownloadSuccess(path));
+        emit(SubtitleDownloadSuccess(path, _lastResults));
       } else {
-        emit(const SubtitleError('Failed to download subtitle'));
+        emit(SubtitleError('Failed to download subtitle', results: _lastResults));
       }
     } catch (e) {
-      emit(SubtitleError(e.toString()));
+      emit(SubtitleError(e.toString(), results: _lastResults));
     }
   }
   

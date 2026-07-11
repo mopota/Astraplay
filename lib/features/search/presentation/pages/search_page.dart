@@ -8,6 +8,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:isar_community/isar.dart';
 import '../../../../injection_container.dart';
 import '../../../../core/database/app_database.dart';
+import '../../../../core/localization/app_localizations.dart';
 import '../../../settings/presentation/cubit/settings_cubit.dart';
 import '../../domain/repositories/search_repository.dart';
 import '../../../../core/presentation/widgets/app_shimmer.dart';
@@ -51,7 +52,7 @@ class _SearchPageState extends State<SearchPage> {
     final db = sl<AppDatabase>();
     final h = SearchHistory()..query = query.trim().toLowerCase()..timestamp = DateTime.now();
     await db.isar.writeTxn(() => db.isar.searchHistorys.put(h));
-    _loadHistory();
+    await _loadHistory();
   }
 
   @override
@@ -108,12 +109,16 @@ class _SearchPageState extends State<SearchPage> {
           child: SearchBar(
             controller: _controller,
             autoFocus: true,
-            hintText: 'Search movies, series or channels...',
+            hintText: context.tr('search_placeholder'),
             onChanged: _onSearchChanged,
-            elevation: WidgetStateProperty.all(0),
-            backgroundColor: WidgetStateProperty.all(colorScheme.surfaceContainerHighest.withAlpha(120)),
+            elevation: const WidgetStatePropertyAll(0),
+            backgroundColor: WidgetStatePropertyAll(colorScheme.surfaceContainerHighest.withAlpha(120)),
             leading: const Icon(Icons.search_rounded, semanticLabel: 'Search'),
-            shape: WidgetStateProperty.all(RoundedRectangleBorder(borderRadius: BorderRadius.circular(20))),
+            shape: const WidgetStatePropertyAll(
+              RoundedRectangleBorder(
+                borderRadius: BorderRadius.all(Radius.circular(20)),
+              ),
+            ),
             trailing: [
               if (_controller.text.isNotEmpty)
                 IconButton(
@@ -139,19 +144,19 @@ class _SearchPageState extends State<SearchPage> {
         child: ListView.builder(
           padding: const EdgeInsets.all(20),
           itemCount: 8,
-          itemBuilder: (context, index) => Padding(
-            padding: const EdgeInsets.only(bottom: 16),
+          itemBuilder: (context, index) => const Padding(
+            padding: EdgeInsets.only(bottom: 16),
             child: Row(
               children: [
-                const ShimmerPlaceholder(width: 70, height: 70, borderRadius: 16),
-                const SizedBox(width: 16),
+                ShimmerPlaceholder(width: 70, height: 70, borderRadius: 16),
+                SizedBox(width: 16),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const ShimmerPlaceholder(width: double.infinity, height: 16),
-                      const SizedBox(height: 8),
-                      const ShimmerPlaceholder(width: 150, height: 12),
+                      ShimmerPlaceholder(width: double.infinity, height: 16),
+                      SizedBox(height: 8),
+                      ShimmerPlaceholder(width: 150, height: 12),
                     ],
                   ),
                 ),
@@ -163,45 +168,53 @@ class _SearchPageState extends State<SearchPage> {
     }
     
     if (_localResults.isEmpty) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (_controller.text.isEmpty && _history.isNotEmpty) ...[
-              const SizedBox(height: 20),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text('Recent Searches', style: GoogleFonts.poppins(fontWeight: FontWeight.w800, fontSize: 16)),
-                  TextButton(
-                    onPressed: () async {
-                      final db = sl<AppDatabase>();
-                      await db.isar.searchHistorys.clear();
-                      _loadHistory();
-                    },
-                    child: const Text('Clear All'),
-                  ),
-                ],
+      return CustomScrollView(
+        slivers: [
+          if (_controller.text.isEmpty && _history.isNotEmpty)
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+              sliver: SliverToBoxAdapter(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(context.tr('recent_searches'), style: GoogleFonts.poppins(fontWeight: FontWeight.w800, fontSize: 16)),
+                        TextButton(
+                          onPressed: () async {
+                            final db = sl<AppDatabase>();
+                            await db.isar.searchHistorys.clear();
+                            await _loadHistory();
+                          },
+                          child: Text(context.tr('clear_all')),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: _history.map((q) => ActionChip(
+                        label: Text(q),
+                        onPressed: () {
+                          _controller.text = q;
+                          unawaited(_performSearch(q));
+                        },
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        backgroundColor: colorScheme.surfaceContainerHighest.withAlpha(100),
+                      )).toList(),
+                    ),
+                    const SizedBox(height: 32),
+                  ],
+                ),
               ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: _history.map((q) => ActionChip(
-                  label: Text(q),
-                  onPressed: () {
-                    _controller.text = q;
-                    unawaited(_performSearch(q));
-                  },
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  backgroundColor: colorScheme.surfaceContainerHighest.withAlpha(100),
-                )).toList(),
-              ),
-              const SizedBox(height: 32),
-            ],
-            Expanded(
-              child: Center(
+            ),
+          SliverFillRemaining(
+            hasScrollBody: false,
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
@@ -219,7 +232,7 @@ class _SearchPageState extends State<SearchPage> {
                     ),
                     const SizedBox(height: 24),
                     Text(
-                      _controller.text.isEmpty ? 'Find your favorites' : 'No matches found',
+                      _controller.text.isEmpty ? context.tr('find_favorites') : context.tr('no_matches'),
                       style: GoogleFonts.poppins(
                         fontSize: 20,
                         fontWeight: FontWeight.w800,
@@ -228,15 +241,15 @@ class _SearchPageState extends State<SearchPage> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      _controller.text.isEmpty ? 'Search through your added playlists' : 'Try different keywords',
+                      _controller.text.isEmpty ? context.tr('search_desc') : context.tr('try_different'),
                       style: TextStyle(color: colorScheme.outline),
                     ),
                   ],
                 ),
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       );
     }
 

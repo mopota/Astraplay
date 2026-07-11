@@ -44,25 +44,28 @@ class _SubtitleDownloaderSheetState extends State<SubtitleDownloaderSheet> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
     
-    return Container(
-      height: MediaQuery.of(context).size.height * 0.8,
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildHandle(),
-          const SizedBox(height: 24),
-          _buildHeader(theme),
-          const SizedBox(height: 20),
-          _buildSearchAndFilters(theme),
-          const SizedBox(height: 16),
-          Expanded(child: _buildResultsList(theme)),
-        ],
+    return Material(
+      color: colorScheme.surface,
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+      child: Container(
+        height: MediaQuery.of(context).size.height * 0.8,
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildHandle(),
+            const SizedBox(height: 24),
+            _buildHeader(theme),
+            const SizedBox(height: 20),
+            _buildSearchAndFilters(theme),
+            const SizedBox(height: 16),
+            Expanded(
+              child: _buildResultsList(theme),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -166,8 +169,16 @@ class _SubtitleDownloaderSheetState extends State<SubtitleDownloaderSheet> {
           widget.onSubtitleSelected(state.path);
           Navigator.pop(context);
         } else if (state is SubtitleError) {
+          String userMessage = state.message;
+          if (userMessage.contains('503')) {
+            userMessage = 'Server busy. Retrying automatically or try again later.';
+          }
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(state.message)),
+            SnackBar(
+              content: Text(userMessage),
+              backgroundColor: Colors.redAccent,
+              behavior: SnackBarBehavior.floating,
+            ),
           );
         }
       },
@@ -176,8 +187,25 @@ class _SubtitleDownloaderSheetState extends State<SubtitleDownloaderSheet> {
           return const Center(child: CircularProgressIndicator());
         }
 
+        List<SubtitleSearchResult> results = [];
+        bool isDownloading = false;
+
         if (state is SubtitleSearchSuccess) {
-          if (state.results.isEmpty) {
+          results = state.results;
+          isDownloading = state.isDownloading;
+        } else if (state is SubtitleDownloadSuccess) {
+          results = state.results;
+        } else if (state is SubtitleError) {
+          results = state.results;
+        }
+
+        if (results.isEmpty) {
+          if (state is SubtitleInitial) {
+            return Center(
+              child: Text('Enter a title to search', style: TextStyle(color: theme.colorScheme.outline)),
+            );
+          }
+          if (state is! SubtitleLoading) {
             return Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -189,33 +217,51 @@ class _SubtitleDownloaderSheetState extends State<SubtitleDownloaderSheet> {
               ),
             );
           }
-
-          return ListView.builder(
-            itemCount: state.results.length,
-            itemBuilder: (context, index) {
-              final sub = state.results[index];
-              return _buildSubtitleItem(sub, theme);
-            },
-          );
         }
 
-        return Center(
-          child: Text('Enter a title to search', style: TextStyle(color: theme.colorScheme.outline)),
+        return Stack(
+          children: [
+            ListView.builder(
+              itemCount: results.length,
+              itemBuilder: (context, index) {
+                final sub = results[index];
+                return _buildSubtitleItem(sub, theme, isDownloading);
+              },
+            ),
+            if (isDownloading)
+              Container(
+                decoration: BoxDecoration(
+                  color: Colors.black45,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: const Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      CircularProgressIndicator(),
+                      SizedBox(height: 16),
+                      Text('Downloading...', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                ),
+              ),
+          ],
         );
       },
     );
   }
 
-  Widget _buildSubtitleItem(SubtitleSearchResult sub, ThemeData theme) {
+  Widget _buildSubtitleItem(SubtitleSearchResult sub, ThemeData theme, bool isDownloading) {
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       color: theme.colorScheme.surfaceContainer,
+      clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: ListTile(
         title: Text(sub.fileName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
         subtitle: Row(
           children: [
-            Icon(Icons.star_rounded, size: 14, color: Colors.amber),
+            const Icon(Icons.star_rounded, size: 14, color: Colors.amber),
             const SizedBox(width: 4),
             Text(sub.rating.toString(), style: const TextStyle(fontSize: 12)),
             const SizedBox(width: 12),
@@ -225,7 +271,7 @@ class _SubtitleDownloaderSheetState extends State<SubtitleDownloaderSheet> {
           ],
         ),
         trailing: IconButton.filledTonal(
-          onPressed: () => context.read<SubtitleCubit>().download(sub),
+          onPressed: isDownloading ? null : () => context.read<SubtitleCubit>().download(sub),
           icon: const Icon(Icons.download_rounded),
         ),
       ),

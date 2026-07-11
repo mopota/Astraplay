@@ -5,11 +5,11 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../../core/database/app_database.dart';
 import '../../../../injection_container.dart';
+import '../../../../core/localization/app_localizations.dart';
 import '../../domain/repositories/stream_repository.dart';
 
 class MovieDetailsPage extends StatefulWidget {
   final AppStream stream;
-
   const MovieDetailsPage({super.key, required this.stream});
 
   @override
@@ -18,17 +18,11 @@ class MovieDetailsPage extends StatefulWidget {
 
 class _MovieDetailsPageState extends State<MovieDetailsPage> {
   late bool _isFavorite;
-  Map<String, dynamic>? _metadata;
 
   @override
   void initState() {
     super.initState();
     _isFavorite = widget.stream.isFavorite;
-    if (widget.stream.data.metadata != null) {
-      try {
-        _metadata = jsonDecode(widget.stream.data.metadata!);
-      } catch (_) {}
-    }
   }
 
   Future<void> _toggleFavorite() async {
@@ -52,13 +46,14 @@ class _MovieDetailsPageState extends State<MovieDetailsPage> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final size = MediaQuery.of(context).size;
-
-    final plot = _metadata?['plot']?.toString() ?? _metadata?['description']?.toString();
-    final rating = _metadata?['rating']?.toString() ?? _metadata?['rating_5based']?.toString();
-    final year = _metadata?['year']?.toString() ?? _metadata?['releaseDate']?.toString().split('-').first;
-    final director = _metadata?['director']?.toString();
-    final cast = _metadata?['cast']?.toString();
-    final genre = _metadata?['genre']?.toString();
+    
+    final meta = widget.stream.data.metadata;
+    final plot = meta?.plot;
+    final rating = meta?.rating;
+    final year = meta?.year ?? meta?.releaseDate?.split('-').first;
+    final director = meta?.director;
+    final cast = meta?.cast;
+    final genre = meta?.genre;
 
     return Scaffold(
       backgroundColor: colorScheme.surface,
@@ -72,7 +67,6 @@ class _MovieDetailsPageState extends State<MovieDetailsPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Info Badges
                   Row(
                     children: [
                       if (rating != null && rating != '0') ...[
@@ -87,10 +81,7 @@ class _MovieDetailsPageState extends State<MovieDetailsPage> {
                         Expanded(child: _buildBadge(Icons.movie_filter_rounded, genre, colorScheme.secondary)),
                     ],
                   ),
-
                   const SizedBox(height: 32),
-                  
-                  // Play Button
                   SizedBox(
                     width: double.infinity,
                     height: 60,
@@ -99,35 +90,27 @@ class _MovieDetailsPageState extends State<MovieDetailsPage> {
                       style: FilledButton.styleFrom(
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                         elevation: 4,
-                        shadowColor: colorScheme.primary.withAlpha(100),
                       ),
                       icon: const Icon(Icons.play_arrow_rounded, size: 32),
-                      label: const Text('WATCH NOW', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16, letterSpacing: 1.2)),
+                      label: Text(context.tr('watch_now'), style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
                     ),
                   ),
-
                   const SizedBox(height: 32),
-
                   if (plot != null && plot.isNotEmpty) ...[
-                    Text('Storyline', style: GoogleFonts.poppins(fontWeight: FontWeight.w800, fontSize: 20)),
+                    Text(context.tr('storyline'), style: GoogleFonts.poppins(fontWeight: FontWeight.w800, fontSize: 20)),
                     const SizedBox(height: 12),
-                    Text(
-                      plot,
-                      style: TextStyle(color: colorScheme.onSurfaceVariant.withAlpha(200), height: 1.6, fontSize: 15),
-                    ),
+                    Text(plot, style: TextStyle(color: colorScheme.onSurfaceVariant.withAlpha(200), height: 1.6, fontSize: 15)),
                   ],
-
                   if (director != null || cast != null) ...[
                     const SizedBox(height: 32),
                     Divider(color: colorScheme.outlineVariant.withAlpha(50)),
                     const SizedBox(height: 24),
-                    if (director != null) _buildInfoRow('Director', director, colorScheme),
+                    if (director != null) _buildInfoRow(context.tr('director'), director, colorScheme),
                     if (cast != null) ...[
                       const SizedBox(height: 16),
-                      _buildInfoRow('Cast', cast, colorScheme),
+                      _buildInfoRow(context.tr('cast'), cast, colorScheme),
                     ],
                   ],
-                  
                   const SizedBox(height: 100),
                 ],
               ),
@@ -189,45 +172,24 @@ class _MovieDetailsPageState extends State<MovieDetailsPage> {
           child: CircleAvatar(
             backgroundColor: Colors.black45,
             child: IconButton(
-              icon: Icon(
-                _isFavorite ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-                color: _isFavorite ? Colors.redAccent : Colors.white,
-              ),
+              icon: Icon(_isFavorite ? Icons.favorite_rounded : Icons.favorite_border_rounded, color: _isFavorite ? Colors.redAccent : Colors.white),
               onPressed: _toggleFavorite,
             ),
           ),
         ),
       ],
       flexibleSpace: FlexibleSpaceBar(
-        title: Text(
-          widget.stream.name,
-          style: GoogleFonts.poppins(
-            fontWeight: FontWeight.w900,
-            fontSize: 18,
-            color: Colors.white,
-            shadows: [const Shadow(offset: Offset(0, 2), blurRadius: 10.0, color: Colors.black87)],
-          ),
-        ),
-        titlePadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+        title: Text(widget.stream.name, style: GoogleFonts.poppins(fontWeight: FontWeight.w900, fontSize: 18, color: Colors.white)),
         background: Stack(
           fit: StackFit.expand,
           children: [
             if (widget.stream.data.logoUrl != null)
-              CachedNetworkImage(
-                imageUrl: widget.stream.data.logoUrl!,
-                fit: BoxFit.cover,
-                errorWidget: (_, __, ___) => Container(color: colorScheme.surfaceContainerHighest),
-              )
+              CachedNetworkImage(imageUrl: widget.stream.data.logoUrl!, fit: BoxFit.cover, errorWidget: (_, __, ___) => Container(color: colorScheme.surfaceContainerHighest))
             else
               Container(color: colorScheme.surfaceContainerHighest),
             const DecoratedBox(
               decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [Colors.black54, Colors.transparent, Colors.transparent, Colors.black],
-                  stops: [0.0, 0.3, 0.6, 1.0],
-                ),
+                gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.black54, Colors.transparent, Colors.transparent, Colors.black]),
               ),
             ),
           ],
@@ -242,9 +204,7 @@ class _MovieDetailsPageState extends State<MovieDetailsPage> {
       'title': widget.stream.name,
       'streamId': widget.stream.id,
       'stream': widget.stream,
-      'headers': widget.stream.data.headersJson != null 
-          ? Map<String, String>.from(jsonDecode(widget.stream.data.headersJson!)) 
-          : null,
+      'headers': widget.stream.data.headersJson != null ? Map<String, String>.from(jsonDecode(widget.stream.data.headersJson!)) : null,
     });
   }
 }

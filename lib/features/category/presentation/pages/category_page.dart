@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../../injection_container.dart';
 import '../../../../core/database/app_database.dart';
+import '../../../../core/localization/app_localizations.dart';
 import '../../../playlist/domain/entities/playlist.entity.dart';
 import '../../domain/repositories/category_repository.dart';
 import 'package:dartz/dartz.dart' as dartz;
@@ -22,11 +23,11 @@ class CategoryPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    String title = 'Categories';
+    String title = context.tr('categories');
     switch (type) {
-      case StreamType.live: title = 'Live TV'; break;
-      case StreamType.movie: title = 'Movies'; break;
-      case StreamType.series: title = 'Series'; break;
+      case StreamType.live: title = context.tr('live_tv'); break;
+      case StreamType.movie: title = context.tr('movies'); break;
+      case StreamType.series: title = context.tr('series'); break;
     }
 
     return Scaffold(
@@ -126,19 +127,21 @@ class _CategoryListState extends State<_CategoryList> {
           (categories) {
             if (categories.isEmpty) {
               return Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.category_outlined, size: 80, color: Theme.of(context).colorScheme.outline.withAlpha(100)),
-                    const SizedBox(height: 16),
-                    Text(
-                      'No categories found',
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                            color: Theme.of(context).colorScheme.outline,
-                            fontWeight: FontWeight.bold,
-                          ),
-                    ),
-                  ],
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.category_outlined, size: 80, color: Theme.of(context).colorScheme.outline.withAlpha(100)),
+                      const SizedBox(height: 16),
+                      Text(
+                        context.tr('no_categories'),
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                              color: Theme.of(context).colorScheme.outline,
+                              fontWeight: FontWeight.bold,
+                            ),
+                      ),
+                    ],
+                  ),
                 ),
               );
             }
@@ -221,7 +224,7 @@ class _CategoryListState extends State<_CategoryList> {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    '${category.count} items',
+                    '${category.count} ${context.tr('items')}',
                     style: TextStyle(
                       color: colorScheme.onSurfaceVariant.withAlpha(150),
                       fontSize: 11,

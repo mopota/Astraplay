@@ -46,7 +46,6 @@ Future<void> init() async {
   sl.registerLazySingleton<SearchRepository>(
     () => SearchRepositoryImpl(
       database: sl(),
-      remoteDataSource: sl(),
     ),
   );
 
@@ -64,5 +63,13 @@ Future<void> init() async {
   //! External
   final sharedPreferences = await SharedPreferences.getInstance();
   sl.registerLazySingleton(() => sharedPreferences);
-  sl.registerLazySingleton(() => Dio());
+  
+  final dio = Dio(
+    BaseOptions(
+      connectTimeout: const Duration(seconds: 10),
+      receiveTimeout: const Duration(seconds: 30),
+      sendTimeout: const Duration(seconds: 10),
+    ),
+  );
+  sl.registerLazySingleton(() => dio);
 }

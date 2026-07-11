@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../../../core/localization/app_localizations.dart';
 import '../../../../injection_container.dart';
 import '../../../../core/database/app_database.dart';
 import '../../../../features/category/domain/repositories/stream_repository.dart';
@@ -60,7 +61,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          'My Library',
+          context.tr('favorites'),
           style: GoogleFonts.poppins(fontWeight: FontWeight.w800),
         ),
         centerTitle: true,
@@ -100,7 +101,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
           ),
           const SizedBox(height: 24),
           Text(
-            'Your collection is empty',
+            context.tr('empty_library'),
             style: GoogleFonts.poppins(
               fontSize: 22,
               fontWeight: FontWeight.w800,
@@ -111,7 +112,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 48),
             child: Text(
-              'Long press any movie, series or channel to add it to your favorites',
+              context.tr('empty_library_desc'),
               textAlign: TextAlign.center,
               style: TextStyle(color: colorScheme.outline, fontSize: 14),
             ),
@@ -120,7 +121,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
           FilledButton.icon(
             onPressed: () => context.push('/search'),
             icon: const Icon(Icons.search_rounded),
-            label: const Text('DISCOVER CONTENT'),
+            label: Text(context.tr('discover_content')),
           ),
         ],
       ),
@@ -197,9 +198,9 @@ class _FavoriteCard extends StatelessWidget {
                 children: [
                   Container(width: 40, height: 4, decoration: BoxDecoration(color: colorScheme.outlineVariant, borderRadius: BorderRadius.circular(2))),
                   const SizedBox(height: 24),
-                  const Text('Manage Favorite', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+                  Text(context.tr('manage_favorite'), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
                   const SizedBox(height: 8),
-                  Text('Do you want to remove this item from your list?', style: TextStyle(color: colorScheme.outline)),
+                  Text(context.tr('remove_favorite_desc'), style: TextStyle(color: colorScheme.outline)),
                   const SizedBox(height: 32),
                   Row(
                     children: [
@@ -207,7 +208,7 @@ class _FavoriteCard extends StatelessWidget {
                         child: OutlinedButton(
                           onPressed: () => Navigator.pop(context, false),
                           style: OutlinedButton.styleFrom(padding: const EdgeInsets.all(16), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
-                          child: const Text('Cancel'),
+                          child: Text(context.tr('cancel')),
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -215,7 +216,7 @@ class _FavoriteCard extends StatelessWidget {
                         child: FilledButton(
                           onPressed: () => Navigator.pop(context, true),
                           style: FilledButton.styleFrom(backgroundColor: colorScheme.error, foregroundColor: colorScheme.onError, padding: const EdgeInsets.all(16), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
-                          child: const Text('Remove'),
+                          child: Text(context.tr('remove')),
                         ),
                       ),
                     ],

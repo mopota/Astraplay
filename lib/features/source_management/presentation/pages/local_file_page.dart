@@ -3,6 +3,8 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import '../../../../core/localization/app_localizations.dart';
+import '../../../../core/presentation/widgets/progress_button.dart';
 import '../../../playlist/presentation/bloc/playlist_bloc.dart';
 
 class LocalFilePage extends StatefulWidget {
@@ -25,25 +27,25 @@ class _LocalFilePageState extends State<LocalFilePage> {
         if (state.operationSuccess) {
           context.go('/playlists');
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('File imported successfully')),
+            SnackBar(content: Text(context.tr('file_success'))),
           );
         }
         if (state.error != null) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error: ${state.error}')),
+            SnackBar(content: Text('${context.tr('error')}: ${state.error}')),
           );
         }
       },
       child: Scaffold(
-        appBar: AppBar(title: const Text('Import Local File')),
+        appBar: AppBar(title: Text(context.tr('import_local_file'))),
         body: Padding(
           padding: const EdgeInsets.all(24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Select Playlist File',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              Text(
+                context.tr('select_playlist_file'),
+                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 24),
               
@@ -54,7 +56,7 @@ class _LocalFilePageState extends State<LocalFilePage> {
                   width: double.infinity,
                   padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 20),
                   decoration: BoxDecoration(
-                    color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+                    color: colorScheme.surfaceContainerHighest.withAlpha(80),
                     borderRadius: BorderRadius.circular(16),
                     border: Border.all(color: colorScheme.outlineVariant, style: BorderStyle.solid),
                   ),
@@ -65,7 +67,7 @@ class _LocalFilePageState extends State<LocalFilePage> {
                       Text(
                         _selectedPath != null 
                             ? _selectedPath!.split(Platform.pathSeparator).last
-                            : 'Tap to select .m3u or .m3u8 file',
+                            : context.tr('tap_to_select'),
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontWeight: _selectedPath != null ? FontWeight.bold : FontWeight.normal,
@@ -82,34 +84,28 @@ class _LocalFilePageState extends State<LocalFilePage> {
                 TextField(
                   controller: _nameController,
                   decoration: InputDecoration(
-                    labelText: 'Playlist Name',
+                    labelText: context.tr('playlist_name'),
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
                   ),
                 ),
                 const SizedBox(height: 32),
                 BlocBuilder<PlaylistBloc, PlaylistState>(
                   builder: (context, state) {
-                    return SizedBox(
-                      width: double.infinity,
-                      child: FilledButton(
-                        onPressed: state.isLoading ? null : _importFile,
-                        style: FilledButton.styleFrom(
-                          padding: const EdgeInsets.all(16),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                        ),
-                        child: state.isLoading 
-                          ? const CircularProgressIndicator(color: Colors.white)
-                          : const Text('Import Now'),
-                      ),
+                    return ProgressButton(
+                      isLoading: state.isLoading,
+                      progress: state.progress,
+                      statusMessage: state.statusMessage,
+                      label: context.tr('import_now'),
+                      onPressed: _importFile,
                     );
                   },
                 ),
               ],
               
               const Spacer(),
-              const Text(
-                'Supported extensions: .m3u, .m3u8, .txt',
-                style: TextStyle(fontSize: 12, color: Colors.grey),
+              Text(
+                context.tr('supported_ext'),
+                style: const TextStyle(fontSize: 12, color: Colors.grey),
               ),
             ],
           ),
@@ -136,7 +132,7 @@ class _LocalFilePageState extends State<LocalFilePage> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error picking file: $e')),
+          SnackBar(content: Text('${context.tr('error_picking_file')}: $e')),
         );
       }
     }
